@@ -43,6 +43,10 @@ const memRec = new Map();   // pathname -> { v, at, exp }
 const memList = new Map();  // key -> { items:[[field,value]], exp }
 const memCount = new Map(); // compteurs anti-abus
 const REC_TTL = 20e3, LIST_TTL = 120e3;
+function isNotFound(e) {
+  const lib = B();
+  return (lib.BlobNotFoundError && e instanceof lib.BlobNotFoundError) || /not.?found|does not exist|n'existe pas|404/i.test(`${e && e.name} ${e && e.message}`);
+}
 async function fetchVersion(url, at) {
   const r = await fetch(`${url}?v=${new Date(at).getTime()}`, { cache: 'no-store' });
   if (!r.ok) throw new Error('Lecture Blob ' + r.status);
@@ -53,7 +57,7 @@ async function readField(key, field) {
   if (c && c.exp > Date.now()) return c.v;
   let h;
   try { h = await B().head(p, { token: BLOB_TOKEN }); }
-  catch (e) { if (/not.?found|404/i.test(e.name + ' ' + e.message)) { memRec.set(p, { v: null, exp: Date.now() + REC_TTL }); return null; } throw e; }
+  catch (e) { if (isNotFound(e)) { memRec.set(p, { v: null, exp: Date.now() + REC_TTL }); return null; } throw e; }
   const v = c && c.at === String(h.uploadedAt) ? c.v : await fetchVersion(h.url, h.uploadedAt);
   memRec.set(p, { v, at: String(h.uploadedAt), exp: Date.now() + REC_TTL });
   return v;
