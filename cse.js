@@ -20,14 +20,89 @@ const SETTINGS = ['email', 'telephone', 'adresse', 'permanences'];
 const LONG = ['contenu', 'description', 'message', 'permanences'];
 const MAX_FILE = 3.2 * 1024 * 1024;
 
-/* ---------- utilitaires ---------- */
-const storageReady = () => Boolean(REDIS_URL && REDIS_TOKEN);
-async function redis(...cmd) {
-  if (!storageReady()) throw Object.assign(new Error('Stockage non configuré'), { status: 503 });
+/* ---------- stockage : Upstash Redis si configuré, sinon Vercel Blob ---------- */
+const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+const storageReady = () => Boolean((REDIS_URL && REDIS_TOKEN) || BLOB_TOKEN);
+async function redisHttp(cmd) {
   const r = await fetch(REDIS_URL, { method: 'POST', headers: { Authorization: `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' }, body: JSON.stringify(cmd) });
   const d = await r.json().catch(() => ({}));
   if (!r.ok || d.error) throw new Error(d.error || `Redis ${r.status}`);
   return d.result;
+}
+/* Petit magasin clé/valeur au-dessus de Vercel Blob (offre gratuite : opérations comptées).
+   - un fichier par enregistrement : db/<clé>/<champ>.txt (écrasé à chaque écriture)
+   - lecture d'un enregistrement : head() (opération simple) + lecture CDN versionnée
+   - listes (HGETALL) : list() mis en cache 2 min en mémoire, invalidé à chaque écriture
+   - compteurs anti-abus : en mémoire uniquement (aucune opération de stockage) */
+let blobLib;
+const B = () => (blobLib = blobLib || require('@vercel/blob'));
+const enc = s => Buffer.from(String(s)).toString('base64url'); // noms de fichiers sûrs
+const dec = s => Buffer.from(s, 'base64url').toString();
+const pathOf = (key, field) => `db/${enc(key)}/${enc(field)}.txt`;
+const memRec = new Map();   // pathname -> { v, at, exp }
+const memList = new Map();  // key -> { items:[[field,value]], exp }
+const memCount = new Map(); // compteurs anti-abus
+const REC_TTL = 20e3, LIST_TTL = 120e3;
+async function fetchVersion(url, at) {
+  const r = await fetch(`${url}?v=${new Date(at).getTime()}`, { cache: 'no-store' });
+  if (!r.ok) throw new Error('Lecture Blob ' + r.status);
+  return r.text();
+}
+async function readField(key, field) {
+  const p = pathOf(key, field); const c = memRec.get(p);
+  if (c && c.exp > Date.now()) return c.v;
+  let h;
+  try { h = await B().head(p, { token: BLOB_TOKEN }); }
+  catch (e) { if (/not.?found|404/i.test(e.name + ' ' + e.message)) { memRec.set(p, { v: null, exp: Date.now() + REC_TTL }); return null; } throw e; }
+  const v = c && c.at === String(h.uploadedAt) ? c.v : await fetchVersion(h.url, h.uploadedAt);
+  memRec.set(p, { v, at: String(h.uploadedAt), exp: Date.now() + REC_TTL });
+  return v;
+}
+async function writeField(key, field, value) {
+  const p = pathOf(key, field);
+  const r = await B().put(p, String(value), { access: 'public', addRandomSuffix: false, allowOverwrite: true, contentType: 'text/plain; charset=utf-8', cacheControlMaxAge: 60, token: BLOB_TOKEN });
+  memRec.set(p, { v: String(value), at: '', exp: Date.now() + REC_TTL }); memList.delete(key);
+  return r;
+}
+async function delField(key, field) {
+  const p = pathOf(key, field);
+  let h; try { h = await B().head(p, { token: BLOB_TOKEN }); } catch { h = null; }
+  if (h) await B().del(h.url, { token: BLOB_TOKEN });
+  memRec.set(p, { v: null, exp: Date.now() + REC_TTL }); memList.delete(key);
+  return h ? 1 : 0;
+}
+async function getAll(key) {
+  const c = memList.get(key); if (c && c.exp > Date.now()) return c.items;
+  const prefix = `db/${enc(key)}/`; const blobs = []; let cursor;
+  do { const r = await B().list({ prefix, cursor, limit: 1000, token: BLOB_TOKEN }); blobs.push(...r.blobs); cursor = r.hasMore ? r.cursor : undefined; } while (cursor);
+  const items = await Promise.all(blobs.map(async b => {
+    const field = dec(b.pathname.slice(prefix.length).replace(/\.txt$/, ''));
+    const m = memRec.get(b.pathname);
+    const v = m && m.at === String(b.uploadedAt) ? m.v : await fetchVersion(b.url, b.uploadedAt);
+    memRec.set(b.pathname, { v, at: String(b.uploadedAt), exp: Date.now() + REC_TTL });
+    return [field, v];
+  }));
+  memList.set(key, { items, exp: Date.now() + LIST_TTL });
+  return items;
+}
+async function blobCmd(c, a) {
+  switch (c) {
+    case 'HGET': return readField(a[0], a[1]);
+    case 'HSET': await writeField(a[0], a[1], a[2]); return 1;
+    case 'HDEL': return delField(a[0], a[1]);
+    case 'HGETALL': return (await getAll(a[0])).flat();
+    case 'GET': return readField(a[0], '_');
+    case 'SET': await writeField(a[0], '_', a[1]); return 'OK';
+    case 'DEL': return delField(a[0], '_');
+    case 'INCR': { const o = memCount.get(a[0]); const n = o && o.exp > Date.now() ? o.n + 1 : 1; memCount.set(a[0], { n, exp: o && o.exp > Date.now() ? o.exp : Date.now() + 3600e3 }); return n; }
+    case 'EXPIRE': return 1;
+  }
+  throw new Error('Commande inconnue ' + c);
+}
+async function redis(...cmd) {
+  if (!storageReady()) throw Object.assign(new Error('Stockage non configuré'), { status: 503 });
+  if (REDIS_URL && REDIS_TOKEN) return redisHttp(cmd);
+  return blobCmd(String(cmd[0]).toUpperCase(), cmd.slice(1));
 }
 const newId = () => Date.now().toString(36) + crypto.randomBytes(4).toString('hex');
 const b64 = s => Buffer.from(s).toString('base64url');
@@ -86,7 +161,7 @@ async function need(req, role) {
 
 /* ---------- actions ---------- */
 const A = {
-  async health() { return { ok: true, storage: storageReady(), auth: Boolean(ADMIN_PASSWORD) }; },
+  async health() { return { ok: true, storage: storageReady(), backend: REDIS_URL && REDIS_TOKEN ? 'redis' : BLOB_TOKEN ? 'blob' : 'none', auth: Boolean(ADMIN_PASSWORD) }; },
 
   async register(req) {
     const b = body(req);
