@@ -251,7 +251,7 @@ const A = {
     if (req.method === 'DELETE') {
       await need(req, 'elu'); const id = String(req.query.id || '');
       const prev = await redis('HGET', key, id);
-      if (prev) { try { const it = JSON.parse(prev); if (it.fileId) await redis('DEL', `cse:file:${it.fileId}`); } catch {} }
+      if (prev) { try { const it = JSON.parse(prev); if (it.fileId) await redis('DEL', `cse:file:${it.fileId}`); if (it.docId) await redis('DEL', `cse:file:${it.docId}`); } catch {} }
       await redis('HDEL', key, id); return { ok: true };
     }
     // POST
@@ -270,15 +270,23 @@ const A = {
     if (b.id) { const prev = await redis('HGET', key, String(b.id)); if (prev) item = JSON.parse(prev); }
     for (const f of FIELDS[col]) if (b[f] !== undefined) item[f] = clip(b[f], f);
     item.id = item.id || newId(); item.created = item.created || new Date().toISOString();
-    if (b.file && b.file.data) {
-      const data = String(b.file.data);
+    async function storeFile(f, prefix) {
+      const data = String(f.data);
       if (!/^data:[\w.+-]+\/[\w.+-]+;base64,/.test(data)) throw fail(400, 'Fichier invalide');
       if (data.length > MAX_FILE) throw fail(413, 'Fichier trop lourd (2,4 Mo maximum).');
-      if (item.fileId) await redis('DEL', `cse:file:${item.fileId}`);
-      item.fileId = newId(); await redis('SET', `cse:file:${item.fileId}`, data);
-      item.fileName = clip(b.file.name || 'fichier'); item.fileType = data.slice(5, data.indexOf(';'));
-      item.fileSize = Math.round((data.length - data.indexOf(',') - 1) * 0.75);
+      if (item[prefix + 'Id']) await redis('DEL', `cse:file:${item[prefix + 'Id']}`);
+      item[prefix + 'Id'] = newId(); await redis('SET', `cse:file:${item[prefix + 'Id']}`, data);
+      item[prefix + 'Name'] = clip(f.name || 'fichier'); item[prefix + 'Type'] = data.slice(5, data.indexOf(';'));
+      item[prefix + 'Size'] = Math.round((data.length - data.indexOf(',') - 1) * 0.75);
     }
+    // ancienne actualité : le PDF était rangé comme fichier principal → on le déplace en document joint
+    if (b.file && b.file.data && item.fileId && !/^image\//.test(item.fileType || '') && !item.docId) {
+      item.docId = item.fileId; item.docName = item.fileName; item.docType = item.fileType; item.docSize = item.fileSize;
+      delete item.fileId;
+    }
+    if (b.file && b.file.data) await storeFile(b.file, 'file');   // photo / image principale
+    if (b.doc && b.doc.data) await storeFile(b.doc, 'doc');       // document joint (PDF, Word…)
+    if (b.removeDoc && item.docId) { await redis('DEL', `cse:file:${item.docId}`); for (const k of ['docId', 'docName', 'docType', 'docSize']) delete item[k]; }
     if (col === 'galerie' && !item.fileId && !item.video) throw fail(400, 'Ajoutez une photo, une vidéo ou un lien vidéo.');
     await redis('HSET', key, item.id, JSON.stringify(item)); return { item };
   },
