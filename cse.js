@@ -1,4 +1,4 @@
-// Portail CSE Concentrix Compiègne — fonction serveur unique (Vercel, Node).
+// Portail CGT Concentrix Compiègne — fonction serveur unique (Vercel, Node).
 // Toutes les routes passent par /api/cse?a=...
 const crypto = require('crypto');
 
@@ -147,7 +147,7 @@ async function rateLimit(req, key, max) {
 async function getUser(id) { const v = await redis('HGET', 'cse:users', id); return v ? JSON.parse(v) : null; }
 async function allUsers() { const f = (await redis('HGETALL', 'cse:users')) || []; const o = []; for (let i = 1; i < f.length; i += 2) o.push(JSON.parse(f[i])); return o; }
 async function saveUser(u) { await redis('HSET', 'cse:users', u.id, JSON.stringify(u)); }
-const ADMIN_USER = { id: 'admin', email: 'admin', prenom: 'Administrateur', nom: 'CSE', role: 'elu', status: 'active', created: '2026-01-01T00:00:00.000Z' };
+const ADMIN_USER = { id: 'admin', email: 'admin', prenom: 'Administrateur', nom: 'CGT', role: 'elu', status: 'active', created: '2026-01-01T00:00:00.000Z' };
 
 /* Session courante : vérifie le jeton ET que le compte est toujours actif */
 async function session(req) {
@@ -195,8 +195,8 @@ const A = {
     const id = await redis('HGET', 'cse:emails', email);
     const u = id && await getUser(id);
     if (!u || !checkPw(b.password || '', u)) throw fail(401, 'Identifiant ou mot de passe incorrect.');
-    if (u.status === 'pending') throw fail(403, 'Votre compte est en attente de validation par un·e élu·e du CSE.');
-    if (u.status !== 'active') throw fail(403, "Votre compte n'est pas actif. Contactez un·e élu·e du CSE.");
+    if (u.status === 'pending') throw fail(403, 'Votre compte est en attente de validation par un·e responsable de la section CGT.');
+    if (u.status !== 'active') throw fail(403, "Votre compte n'est pas actif. Contactez la section CGT.");
     return { token: makeToken(u), user: publicUser(u) };
   },
 
