@@ -516,6 +516,24 @@ body.guest .main-nav>a,body.guest .account-menu,body.guest .burger,body.guest .f
 .lb-link{color:#FFD200;font-weight:700}
 .gal-item img{object-position:top center}
 
+/* Téléphone : rien ne dépasse en largeur, la page ne flotte plus de côté */
+html,body{max-width:100%;overflow-x:hidden}
+@supports (overflow:clip){html,body{overflow-x:clip}}
+img,video,iframe{max-width:100%}
+.page,.wrap,main{min-width:0}
+.install-banner{left:10px;right:10px;padding:8px;gap:8px}
+.install-banner div{min-width:0}
+.install-banner small{display:block;overflow:hidden;text-overflow:ellipsis}
+.install-banner .btn{flex-shrink:0;padding:8px 12px}
+.install-banner .icon-btn{flex-shrink:0}
+@media (max-width:380px){.install-banner img{width:36px;height:36px}.install-banner small{display:none}}
+.tile .tbody{min-width:0}
+.tile .tbody>div{min-width:0}
+.tile h3{overflow-wrap:anywhere}
+@media (max-width:380px){.tiles{gap:10px;padding:0 12px}.tile .round-arrow{width:30px;height:30px}.tile .round-arrow svg{width:16px;height:16px}.tile .tbody{padding:2px 10px 12px;gap:6px}}
+.account-card .meta,.u-info small,.drop-who small,.msg-head small{overflow-wrap:anywhere}
+.une-img,.gal-item,#lightbox figure{touch-action:pan-y pinch-zoom}
+
 </style>
 </head>
 <body>
@@ -971,6 +989,17 @@ function accountCard() {
     <button class="btn btn-ghost" data-logout>Déconnexion${icon('logout')}</button>`;
 }
 
+/* Glisser du doigt à gauche / à droite */
+function addSwipe(el, onNext, onPrev) {
+  let x0 = null, y0 = 0;
+  el.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+  el.addEventListener('touchend', e => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.3) (dx < 0 ? onNext : onPrev)();
+  }, { passive: true });
+}
+
 /* ---------- Pages ---------- */
 const Views = {
   /* Écran de connexion / inscription (visiteurs non connectés) */
@@ -1047,7 +1076,7 @@ const Views = {
           <h1><span class="l">Bienvenue sur le portail de la</span><span class="l"><em>CGT Concentrix Compiègne</em></span></h1>
           <div class="red-rule"></div>
           <p>Un espace dédié à l'information, à vos droits, aux avantages et à la vie de notre section syndicale.</p>
-          <a class="btn btn-red" href="#/compte">Accéder à mon espace${icon('arrow')}</a>
+          ${admin ? `<a class="btn btn-red" href="#/espace">Tableau de bord${icon('arrow')}</a>` : `<a class="btn btn-red" href="#/compte">Accéder à mon espace${icon('arrow')}</a>`}
         </div>
         <div class="hero-img"><img src="${im('hero-team.jpg')}" alt="" width="1324" height="636"></div>
         <aside class="account-card">${accountCard()}</aside>
@@ -1093,6 +1122,7 @@ const Views = {
     };
     $$('.dots button').forEach(b => b.onclick = () => { show(+b.dataset.une); clearInterval(window._uneT); });
     show(0); clearInterval(window._uneT);
+    addSwipe(box, () => { show(i + 1); clearInterval(window._uneT); }, () => { show(i - 1); clearInterval(window._uneT); });
     if (a.length > 1) window._uneT = setInterval(() => document.body.contains(box) ? show(i + 1) : clearInterval(window._uneT), 7000);
   },
 
@@ -1124,6 +1154,8 @@ const Views = {
         : emptyState('ic-actus.jpg', 'Aucune actualité pour le moment', 'Revenez bientôt : vos élu·e·s publieront ici les nouvelles du CSE.', 'actus')}
       </div></div>`;
   },
+
+  afterActualites() { autoCovers(); },
 
   async agenda() {
     const items = await safeList('events'); const t = today();
@@ -1336,6 +1368,29 @@ async function userAction(id, op) {
   } catch (e) { toast(e.message); }
 }
 
+/* Anciennes actualités avec un PDF mais sans image : l'aperçu est créé automatiquement
+   (une seule fois, quand un·e responsable ouvre la page Actualités). */
+let coversRunning = false;
+async function autoCovers() {
+  if (!Store.isAdmin() || coversRunning) return;
+  const todo = (Store.cache.actus || []).filter(it => { const d = docOf(it); return !isImg(it) && d && (/pdf$/i.test(d.name || '') || /pdf/.test(d.type || '')); });
+  if (!todo.length) return;
+  coversRunning = true; let done = 0;
+  toast(`Création des aperçus de ${todo.length} document(s)…`);
+  for (const it of todo) {
+    const d = docOf(it);
+    const cover = await pdfCover(Store.docUrl(d));
+    if (!cover) continue;
+    try {
+      const data = { id: it.id }; if (it.fileId && !isImg(it)) data.legacyDocToDoc = true;
+      await Store.save('actus', data, { name: (d.name || 'document').replace(/\.\w+$/, '') + '-apercu.jpg', data: cover });
+      done++;
+    } catch (e) { console.warn(e); }
+  }
+  coversRunning = false;
+  if (done) { toast(`${done} aperçu(s) ajouté(s) aux actualités et à la galerie.`); if (parseRoute().name === 'actualites') render(); }
+}
+
 /* ---------- Formulaire d'ajout / modification (élu·e·s) ---------- */
 function openForm(col, id) {
   const meta = COLS[col];
@@ -1507,6 +1562,7 @@ function showLb() {
 }
 function stepLb(d) { const n = (window._gal || []).length; if (!n) return; lbIndex = (lbIndex + d + n) % n; showLb(); }
 function closeLightbox() { $('#lightbox').hidden = true; $('#lb-media').innerHTML = ''; document.body.style.overflow = ''; }
+addSwipe($('#lightbox'), () => stepLb(1), () => stepLb(-1));
 $('#lb-close').onclick = closeLightbox; $('#lb-prev').onclick = () => stepLb(-1); $('#lb-next').onclick = () => stepLb(1);
 $('#lightbox').onclick = e => { if (e.target.id === 'lightbox' || e.target.closest('.lb-link')) closeLightbox(); };
 
