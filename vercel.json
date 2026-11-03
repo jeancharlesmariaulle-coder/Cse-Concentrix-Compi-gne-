@@ -1,0 +1,10 @@
+{
+  "builds": [
+    { "src": "cse.js", "use": "@vercel/node" },
+    { "src": "index.html", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/cse", "dest": "/cse.js" },
+    { "src": "/", "dest": "/index.html" }
+  ]
+}
