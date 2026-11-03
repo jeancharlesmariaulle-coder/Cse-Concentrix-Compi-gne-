@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const REDIS_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || 'admin').trim().toLowerCase();
 const SECRET = process.env.SESSION_SECRET || ADMIN_PASSWORD || 'cse';
 
 const CONTENT = ['actus', 'events', 'avantages', 'documents', 'galerie'];
@@ -147,7 +148,7 @@ async function rateLimit(req, key, max) {
 async function getUser(id) { const v = await redis('HGET', 'cse:users', id); return v ? JSON.parse(v) : null; }
 async function allUsers() { const f = (await redis('HGETALL', 'cse:users')) || []; const o = []; for (let i = 1; i < f.length; i += 2) o.push(JSON.parse(f[i])); return o; }
 async function saveUser(u) { await redis('HSET', 'cse:users', u.id, JSON.stringify(u)); }
-const ADMIN_USER = { id: 'admin', email: 'admin', prenom: 'Administrateur', nom: 'CGT', role: 'elu', status: 'active', created: '2026-01-01T00:00:00.000Z' };
+const ADMIN_USER = { id: 'admin', email: ADMIN_EMAIL, prenom: 'Administrateur', nom: 'CGT', role: 'elu', status: 'active', created: '2026-01-01T00:00:00.000Z' };
 
 /* Session courante : vérifie le jeton ET que le compte est toujours actif */
 async function session(req) {
@@ -173,6 +174,7 @@ const A = {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw fail(400, 'Adresse email invalide.');
     if (String(b.password || '').length < 8) throw fail(400, 'Le mot de passe doit faire au moins 8 caractères.');
     if (!String(b.prenom || '').trim() || !String(b.nom || '').trim()) throw fail(400, 'Indiquez votre prénom et votre nom.');
+    if (email === ADMIN_EMAIL) throw fail(409, 'Cette adresse est réservée au compte administrateur.');
     await rateLimit(req, 'reg', 5);
     const existing = await redis('HGET', 'cse:emails', email);
     if (existing) throw fail(409, 'Un compte existe déjà avec cet email.');
@@ -185,7 +187,7 @@ const A = {
     const b = body(req);
     const email = String(b.email || '').trim().toLowerCase();
     await new Promise(r => setTimeout(r, 300));
-    if (email === 'admin') {
+    if (email === 'admin' || email === ADMIN_EMAIL) {
       if (!ADMIN_PASSWORD) throw fail(503, "Le mot de passe administrateur n'est pas configuré.");
       await rateLimit(req, 'adm', 15);
       if (!sameSecret(b.password || '', ADMIN_PASSWORD)) throw fail(401, 'Identifiant ou mot de passe incorrect.');
