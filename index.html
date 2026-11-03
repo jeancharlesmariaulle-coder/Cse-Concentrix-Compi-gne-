@@ -538,6 +538,15 @@ img,video,iframe{max-width:100%}
 .article .content,.card-body p,.card-body h3,.article h1,.une h3,.une p,.ev p,.ev h3,.msg p,.doc h3,.doc p,.info-card p,.attach-doc strong{overflow-wrap:anywhere;word-break:normal;min-width:0}
 .article,.article .inner{min-width:0;max-width:100%}
 
+/* Article : texte replié avec « Lire plus » */
+.content-wrap.collapsible{position:relative}
+.content-wrap.collapsed{max-height:12.2em;overflow:hidden}
+.content-wrap.collapsed::after{content:"";position:absolute;left:0;right:0;bottom:0;height:4.5em;background:linear-gradient(rgba(255,255,255,0),#fff)}
+.read-more{display:inline-flex;align-items:center;gap:6px;margin-top:12px;background:#fff;border:1.5px solid var(--red);color:var(--red);font-weight:700;font-size:14.5px;padding:10px 18px;border-radius:999px;cursor:pointer}
+.read-more svg{width:18px;height:18px;transition:transform .2s}
+.read-more[aria-expanded=true] svg{transform:rotate(180deg)}
+.read-more:hover{background:#FFF0F0}
+
 </style>
 </head>
 <body>
@@ -1157,7 +1166,7 @@ const Views = {
         <article class="article" style="position:relative">${adminActions('actus', it.id)}<div class="inner">${catPill(it.cat)}<h1>${esc(it.titre)}</h1>
         <div class="meta-line"><span>${icon('calendar')}${fmtDate(it.date || it.created)}</span>${it.auteur ? `<span>${icon('user')}${esc(it.auteur)}</span>` : ''}</div></div>
         ${media}${actions}
-        <div class="inner"><div class="content">${esc(cleanText(it.contenu))}</div></div></article></div>`;
+        <div class="inner"><div class="content-wrap${cleanText(it.contenu).length > 380 || cleanText(it.contenu).split('\n').length > 7 ? ' collapsible collapsed' : ''}"><div class="content">${esc(cleanText(it.contenu))}</div></div>${cleanText(it.contenu).length > 380 || cleanText(it.contenu).split('\n').length > 7 ? `<button class="read-more" data-readmore aria-expanded="false"><span>Lire plus</span>${icon('chevron-down')}</button>` : ''}</div></article></div>`;
     }
     const cats = [...new Set(items.map(x => x.cat).filter(Boolean))];
     return `<div class="page">${pageHead('Actualités', 'Communiqués, comptes-rendus et informations publiés par vos élu·e·s.', 'actus')}
@@ -1531,6 +1540,13 @@ function updateChrome() {
 function logout() { Store.logout(); toast('Vous êtes déconnecté·e.'); location.hash = '#/'; render(); }
 
 document.addEventListener('click', e => {
+  const rm = e.target.closest('[data-readmore]');
+  if (rm) {
+    const w = rm.previousElementSibling; const open = w.classList.toggle('collapsed') === false;
+    rm.setAttribute('aria-expanded', open); rm.querySelector('span').textContent = open ? 'Réduire' : 'Lire plus';
+    if (!open) w.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
   const t = e.target.closest('[data-add],[data-edit],[data-del],[data-copy],[data-filter],[data-lb],[data-logout],[data-close],[data-uop]');
   if (!t) { if (!e.target.closest('.account-menu')) closeDrop(); return; }
   if (t.dataset.add) openForm(t.dataset.add);
