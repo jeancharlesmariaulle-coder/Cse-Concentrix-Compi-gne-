@@ -1,0 +1,18 @@
+{
+  "name": "CGT Concentrix Compiègne",
+  "short_name": "CGT Concentrix",
+  "description": "Le portail de la section CGT FAPT Concentrix Compiègne : actualités, agenda, avantages, documents, photos et contact.",
+  "lang": "fr",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5F6FA",
+  "theme_color": "#0B1736",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
