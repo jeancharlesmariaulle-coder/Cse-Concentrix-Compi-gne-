@@ -534,6 +534,10 @@ img,video,iframe{max-width:100%}
 .account-card .meta,.u-info small,.drop-who small,.msg-head small{overflow-wrap:anywhere}
 .une-img,.gal-item,#lightbox figure{touch-action:pan-y pinch-zoom}
 
+/* Textes longs : toujours dans la largeur de l'écran */
+.article .content,.card-body p,.card-body h3,.article h1,.une h3,.une p,.ev p,.ev h3,.msg p,.doc h3,.doc p,.info-card p,.attach-doc strong{overflow-wrap:anywhere;word-break:normal;min-width:0}
+.article,.article .inner{min-width:0;max-width:100%}
+
 </style>
 </head>
 <body>
@@ -773,7 +777,18 @@ function today() { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTime
 function parseDate(s) { if (!s) return null; const [y, m, d] = s.slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d); }
 function fmtDate(s, opts = { day: 'numeric', month: 'long', year: 'numeric' }) { const d = parseDate(s); return d ? d.toLocaleDateString('fr-FR', opts) : ''; }
 function fmtSize(n) { return n > 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' Mo' : Math.max(1, Math.round(n / 1024)) + ' Ko'; }
-function excerpt(t, n = 150) { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n).replace(/\s\S*$/, '').replace(/[\s.,;:!?…-]+$/, '') + '…' : t; }
+/* Nettoie un texte copié depuis un PDF / Word : espaces insécables, retraits, lignes vides en trop */
+function cleanText(t) {
+  return String(t || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[    - 　]/g, ' ')
+    .replace(/[​‌‍⁠﻿]/g, '')
+    .replace(/\t/g, ' ')
+    .split('\n').map(l => l.replace(/^ +/, '').replace(/ {2,}/g, ' ').replace(/ +$/, '')).join('\n')
+    .replace(/ ([:;!?»])/g, ' $1').replace(/« /g, '« ')
+    .replace(/\n{3,}/g, '\n\n').trim();
+}
+function excerpt(t, n = 150) { t = cleanText(t).replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n).replace(/\s\S*$/, '').replace(/[\s.,;:!?…-]+$/, '') + '…' : t; }
 function safeUrl(u) { try { const x = new URL(u); return /^https?:$/.test(x.protocol) ? x.href : ''; } catch { return ''; } }
 const ls = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
@@ -1142,7 +1157,7 @@ const Views = {
         <article class="article" style="position:relative">${adminActions('actus', it.id)}<div class="inner">${catPill(it.cat)}<h1>${esc(it.titre)}</h1>
         <div class="meta-line"><span>${icon('calendar')}${fmtDate(it.date || it.created)}</span>${it.auteur ? `<span>${icon('user')}${esc(it.auteur)}</span>` : ''}</div></div>
         ${media}${actions}
-        <div class="inner"><div class="content">${esc(it.contenu)}</div></div></article></div>`;
+        <div class="inner"><div class="content">${esc(cleanText(it.contenu))}</div></div></article></div>`;
     }
     const cats = [...new Set(items.map(x => x.cat).filter(Boolean))];
     return `<div class="page">${pageHead('Actualités', 'Communiqués, comptes-rendus et informations publiés par vos élu·e·s.', 'actus')}
@@ -1162,7 +1177,7 @@ const Views = {
     const up = items.filter(e => (e.date || '') >= t).sort((a, b) => (a.date + (a.heure || '')).localeCompare(b.date + (b.heure || '')));
     const past = items.filter(e => (e.date || '') < t).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12);
     const row = (e, i, isPast) => { const d = parseDate(e.date); return `<article class="ev ${isPast ? 'past' : ''}">${adminActions('events', e.id)}<span class="datebox db-${i % 3}"><b>${d.getDate()}</b><span>${d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '')}</span></span>
-      <div><h3>${esc(e.titre)}</h3><div class="meta-line"><span>${icon('calendar')}${fmtDate(e.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>${e.heure ? `<span>${icon('clock')}${esc(e.heure.replace(':', 'h'))}</span>` : ''}${e.lieu ? `<span>${icon('pin')}${esc(e.lieu)}</span>` : ''}</div>${e.description ? `<p>${esc(e.description)}</p>` : ''}</div></article>`; };
+      <div><h3>${esc(e.titre)}</h3><div class="meta-line"><span>${icon('calendar')}${fmtDate(e.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>${e.heure ? `<span>${icon('clock')}${esc(e.heure.replace(':', 'h'))}</span>` : ''}${e.lieu ? `<span>${icon('pin')}${esc(e.lieu)}</span>` : ''}</div>${e.description ? `<p>${esc(cleanText(e.description))}</p>` : ''}</div></article>`; };
     return `<div class="page">${pageHead('Agenda', 'Les prochains rendez-vous de la section : réunions, permanences, mobilisations et événements.', 'events')}
       <div class="wrap page-body">
         ${up.length ? `<div class="ev-list">${up.map((e, i) => row(e, i)).join('')}</div>` : emptyState('ic-agenda.jpg', 'Aucun événement à venir', 'Les prochains événements du CSE apparaîtront ici.', 'events')}
@@ -1175,7 +1190,7 @@ const Views = {
     return `<div class="page">${pageHead('Avantages', 'Offres, réductions et billetterie négociées par le CSE pour les salarié·e·s.', 'avantages')}
       <div class="wrap page-body">${items.length ? `<div class="grid-3">${items.map(it => { const url = safeUrl(it.lien); return `<article class="card">${adminActions('avantages', it.id)}
         <div class="card-img"><img src="${Store.fileUrl(it) || im('ic-avantages.jpg')}" alt="" loading="lazy"></div>
-        <div class="card-body"><div class="meta-line">${catPill(it.cat)}${it.validite ? `<span>${icon('clock')}${esc(it.validite)}</span>` : ''}</div><h3>${esc(it.titre)}</h3>${it.description ? `<p style="white-space:pre-wrap">${esc(it.description)}</p>` : ''}
+        <div class="card-body"><div class="meta-line">${catPill(it.cat)}${it.validite ? `<span>${icon('clock')}${esc(it.validite)}</span>` : ''}</div><h3>${esc(it.titre)}</h3>${it.description ? `<p style="white-space:pre-wrap">${esc(cleanText(it.description))}</p>` : ''}
         ${it.code ? `<div class="code-box"><span>${esc(it.code)}</span><button class="icon-btn" data-copy="${esc(it.code)}" aria-label="Copier le code">${icon('copy')}</button></div>` : ''}
         ${url ? `<a class="text-link" href="${esc(url)}" target="_blank" rel="noopener">Voir l'offre${icon('arrow')}</a>` : ''}</div></article>`; }).join('')}</div>`
         : emptyState('ic-avantages.jpg', 'Les offres arrivent bientôt', 'Les avantages et réductions du CSE seront listés ici.', 'avantages')}</div></div>`;
@@ -1429,7 +1444,7 @@ function openForm(col, id) {
       const v = form.elements[f.k].value.trim();
       if (f.req && !v) { al.innerHTML = `<div class="alert err">Le champ « ${f.l} » est obligatoire.</div>`; form.elements[f.k].focus(); return; }
       if (f.type === 'url' && v && !safeUrl(v)) { al.innerHTML = `<div class="alert err">Le lien doit commencer par https://</div>`; form.elements[f.k].focus(); return; }
-      data[f.k] = v;
+      data[f.k] = f.type === 'textarea' ? cleanText(v) : (f.type === 'url' || f.type === 'date' || f.type === 'time' ? v : cleanText(v).replace(/\n/g, ' '));
     }
     const inp = $('#f-file'); let file = null;
     const btn = $('#f-save'); btn.disabled = true; btn.textContent = 'Envoi…';
