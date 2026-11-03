@@ -513,6 +513,8 @@ body.guest .main-nav>a,body.guest .account-menu,body.guest .burger,body.guest .f
 .attach-doc-actions{display:flex;gap:8px;flex-wrap:wrap}
 .attach-bar+.attach-doc,.full-img+.attach-doc{margin-top:14px}
 .card-img img,.une-img img{object-position:top center}
+.lb-link{color:#FFD200;font-weight:700}
+.gal-item img{object-position:top center}
 
 </style>
 </head>
@@ -1160,7 +1162,11 @@ const Views = {
   },
 
   async galerie() {
-    const items = (await safeList('galerie')).sort((a, b) => String(b.date || b.created).localeCompare(String(a.date || a.created)));
+    const [own, actus] = await Promise.all([safeList('galerie'), safeList('actus')]);
+    /* Les photos des actualités apparaissent automatiquement dans la galerie (album « Actualités ») */
+    const fromActus = actus.filter(isImg).map(x => ({ id: 'actu-' + x.id, fromActu: x.id, titre: x.titre, album: 'Actualités', date: x.date || String(x.created || '').slice(0, 10), created: x.created,
+      fileId: x.fileId, fileName: x.fileName, fileType: x.fileType, fileData: x.fileData }));
+    const items = [...own, ...fromActus].sort((a, b) => String(b.date || b.created).localeCompare(String(a.date || a.created)));
     window._gal = items;
     const albums = [...new Set(items.map(x => x.album).filter(Boolean))];
     const isVid = it => it.video || /^video\//.test(it.fileType || '');
@@ -1172,7 +1178,7 @@ const Views = {
     const kinds = items.some(isVid) && items.some(x => !isVid(x));
     return `<div class="page">${pageHead('Photos & vidéos', 'Revivez nos événements en images.', 'galerie')}
       <div class="wrap page-body">${items.length ? `${albums.length > 1 || kinds ? `<div class="toolbar"><button class="chip on" data-filter="">Tout</button>${kinds ? '<button class="chip" data-filter="__video">Vidéos</button><button class="chip" data-filter="__photo">Photos</button>' : ''}${albums.map(c => `<button class="chip" data-filter="${esc(c)}">${esc(c)}</button>`).join('')}</div>` : ''}
-        <div class="gal" data-list>${items.map((it, i) => `<div style="position:relative" data-cat="${esc(it.album || '')}" data-kind="${isVid(it) ? '__video' : '__photo'}">${adminActions('galerie', it.id)}<button class="gal-item${isVid(it) ? ' is-video' : ''}" data-lb="${i}" aria-label="Ouvrir ${esc(it.titre || (isVid(it) ? 'la vidéo' : 'la photo'))}">${thumb(it)}${isVid(it) ? `<span class="play">${icon('play')}</span>` : ''}${it.titre || it.album ? `<span class="cap">${esc(it.titre || it.album)}</span>` : ''}</button></div>`).join('')}</div>`
+        <div class="gal" data-list>${items.map((it, i) => `<div style="position:relative" data-cat="${esc(it.album || '')}" data-kind="${isVid(it) ? '__video' : '__photo'}">${it.fromActu ? '' : adminActions('galerie', it.id)}<button class="gal-item${isVid(it) ? ' is-video' : ''}" data-lb="${i}" aria-label="Ouvrir ${esc(it.titre || (isVid(it) ? 'la vidéo' : 'la photo'))}">${thumb(it)}${isVid(it) ? `<span class="play">${icon('play')}</span>` : ''}${it.titre || it.album ? `<span class="cap">${esc(it.titre || it.album)}</span>` : ''}</button></div>`).join('')}</div>`
         : emptyState('ic-galerie.jpg', 'Pas encore de photos ni de vidéos', 'Les photos et vidéos de nos événements seront partagées ici.', 'galerie')}</div></div>`;
   },
 
@@ -1497,12 +1503,12 @@ function showLb() {
       : v.kind === 'video' ? `<video src="${esc(v.src)}" controls autoplay playsinline></video>`
       : `<a class="btn btn-red" href="${esc(v.src)}" target="_blank" rel="noopener">Ouvrir la vidéo${icon('arrow')}</a>`;
   }
-  $('#lb-cap').textContent = [it.titre, it.album, fmtDate(it.date)].filter(Boolean).join(' · ');
+  $('#lb-cap').innerHTML = esc([it.titre, it.album, fmtDate(it.date)].filter(Boolean).join(' · ')) + (it.fromActu ? ` · <a href="#/actualites/${encodeURIComponent(it.fromActu)}" class="lb-link">Lire l'article</a>` : '');
 }
 function stepLb(d) { const n = (window._gal || []).length; if (!n) return; lbIndex = (lbIndex + d + n) % n; showLb(); }
 function closeLightbox() { $('#lightbox').hidden = true; $('#lb-media').innerHTML = ''; document.body.style.overflow = ''; }
 $('#lb-close').onclick = closeLightbox; $('#lb-prev').onclick = () => stepLb(-1); $('#lb-next').onclick = () => stepLb(1);
-$('#lightbox').onclick = e => { if (e.target.id === 'lightbox') closeLightbox(); };
+$('#lightbox').onclick = e => { if (e.target.id === 'lightbox' || e.target.closest('.lb-link')) closeLightbox(); };
 
 /* ---------- Application installable (PWA) ---------- */
 let installEvt = null;
