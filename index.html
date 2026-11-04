@@ -896,6 +896,20 @@ body:has(#install-banner:not([hidden])) .chat-fab{bottom:104px}
 @media (max-width:720px){.contact-block-head{padding:14px 16px}.contact-block-form{padding:16px}.contact-block-side{padding:12px}
   .comm-tabs{gap:4px;padding:5px}.comm-tabs a{flex-direction:column;gap:3px;font-size:12px;padding:8px 4px;line-height:1.2}}
 
+/* Accueil : bloc « Télécharger l'application » avec QR code */
+.home-app{max-width:1360px;margin:22px auto 0;padding:0 28px}
+.app-card{display:flex;align-items:center;gap:24px;background:linear-gradient(120deg,#0E1A33,#1B2C55);color:#fff;border-radius:20px;padding:20px 26px;box-shadow:var(--shadow)}
+.app-qr{position:relative;flex-shrink:0;width:132px;height:132px;background:#fff;border-radius:14px;padding:9px;box-sizing:border-box}
+.app-qr canvas,.app-qr img:not(.adh-qr-logo){width:100%!important;height:100%!important;display:block}
+.app-qr .adh-qr-logo{position:absolute;left:50%;top:50%;width:26%;height:26%;transform:translate(-50%,-50%);border-radius:6px;border:3px solid #fff;object-fit:cover}
+.app-text{flex:1;min-width:0}
+.app-text .adh-kicker{color:#FFD200;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+.app-text h3{margin:0 0 6px;font-size:clamp(17px,1.6vw,22px);color:#fff}
+.app-text>p{margin:0 0 12px;font-size:14px;opacity:.85;max-width:640px}
+.app-actions{display:flex;gap:10px;flex-wrap:wrap}
+.app-actions .btn-light{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.3)}
+@media (max-width:720px){.home-app{padding:0 16px}.app-card{flex-direction:column;text-align:center;padding:18px 16px;gap:14px}.app-qr{width:150px;height:150px}.app-actions{justify-content:center}.app-actions .btn{width:100%;justify-content:center}}
+
 </style>
 </head>
 <body>
@@ -956,7 +970,7 @@ body:has(#install-banner:not([hidden])) .chat-fab{bottom:104px}
     </div>
     <div>
       <h4>La section</h4>
-      <a href="#/adhesion"><strong>Adhérer à la CGT</strong></a><a href="#/elus">Vos élu·e·s</a><a href="#/communaute/contact">Nous contacter</a><a href="#/acces">QR code d'accès</a><a href="#/espace">Espace élu·e</a>
+      <a href="#/adhesion"><strong>Adhérer à la CGT</strong></a><a href="#/elus">Vos élu·e·s</a><a href="#/acces">Télécharger l'application (QR code)</a><a href="#/espace">Espace élu·e</a>
     </div>
   </div>
   <div class="wrap footer-bottom">© <span id="year"></span> CGT Concentrix Compiègne · Site de la section syndicale</div>
@@ -1492,12 +1506,16 @@ const Views = {
         <div><h3>Vos élu·e·s du CSE</h3><p>27 représentant·e·s à votre écoute, titulaires et suppléant·e·s.</p></div>
         <a class="btn btn-light" href="#/elus">Voir l'équipe${icon('arrow')}</a>
       </div></section>
-      <section class="home-cta">
-        <div class="cta-card">
-          <h3>Une question ? Contactez-nous !</h3>
-          <p>Notre équipe est là pour vous répondre.</p>
-          <a class="btn" href="#/communaute/contact">Nous contacter${icon('send')}</a>
-          <div class="cta-bubble" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M32 6c14.4 0 26 10.3 26 23S46.4 52 32 52c-3.5 0-6.8-.6-9.8-1.7L10 56l3.6-10.2C9.5 41.6 6 35.6 6 29 6 16.3 17.6 6 32 6Z"/><circle cx="24" cy="25" r="1.6" fill="#fff"/><circle cx="40" cy="25" r="1.6" fill="#fff"/><path d="M22 33c2.6 4 6 6 10 6s7.4-2 10-6"/></svg></div>
+      <section class="home-app">
+        <div class="app-card">
+          <div class="app-qr" data-app-qr role="img" aria-label="QR code pour installer l'application"></div>
+          <div class="app-text">
+            <p class="adh-kicker">Sur votre téléphone</p>
+            <h3>Téléchargez l'application CGT Concentrix Compiègne</h3>
+            <p>Scannez le QR code avec l'appareil photo de votre téléphone, puis ajoutez le portail à votre écran d'accueil : il s'ouvre comme une vraie application.</p>
+            <div class="app-actions"><button type="button" class="btn btn-red" data-install>${icon('download')}Installer l'application</button>
+              <a class="btn btn-light" href="#/acces">Afficher / imprimer le QR code</a></div>
+          </div>
         </div>
       </section>
     </div>`;
@@ -1612,7 +1630,7 @@ const Views = {
   async elus() {
     return `<div class="page">${pageHead('Vos élu·e·s', 'La composition actuelle du Comité Social et Économique, par collège électoral.')}
       <div class="wrap page-body">${ELUS.map(c => `<section class="college"><h2>${c.college}</h2>${c.groups.map(g => `<p class="role">${g.role}</p><div class="reps">${g.people.map(([f, l, s]) => `<div class="rep"><img src="${im('elu-' + s + '.jpg')}" alt="${esc(f + ' ' + l)}" loading="lazy"><div class="first">${esc(f)}</div><div class="last">${esc(l)}</div></div>`).join('')}</div>`).join('')}</section>`).join('')}
-        <div class="info-card" style="max-width:640px"><h3>${icon('send')}Besoin de parler à un·e élu·e ?</h3><p>Adressez-vous directement à l'un·e d'entre nous sur site, ou écrivez-nous dans <a href="#/communaute/contact">Communauté → Contacter la CGT</a>.</p></div>
+        <div class="info-card" style="max-width:640px"><h3>${icon('send')}Besoin de parler à un·e élu·e ?</h3><p>Adressez-vous directement à l'un·e d'entre nous sur site, ou écrivez-nous dans <a href="#/communaute/contact">Communauté → Nous contacter</a>.</p></div>
       </div></div>`;
   },
 
@@ -1864,7 +1882,7 @@ async function render() {
   const sameRoute = app.dataset.route === name + id;
   app.innerHTML = html; app.dataset.route = name + id;
   const after = Views['after' + name[0].toUpperCase() + name.slice(1)]; after && after();
-  drawAdhQr();
+  drawAdhQr(); drawAppQr();
   chatSync();
   if (anchor) document.getElementById(anchor)?.scrollIntoView();
   else if (!sameRoute) window.scrollTo(0, 0);
@@ -2015,6 +2033,21 @@ function adhesionBanner() {
     </div>
   </section>`;
 }
+function drawAppQr() {
+  const boxes = $$('[data-app-qr]'); if (!boxes.length) return;
+  const url = location.origin + '/'; let tries = 0;
+  const draw = () => {
+    if (!window.QRCode) {
+      if (++tries < 15) return setTimeout(draw, 200);
+      boxes.forEach(b => { b.innerHTML = `<img alt="" src="https://api.qrserver.com/v1/create-qr-code/?size=360x360&ecc=H&margin=0&color=0B1736&data=${encodeURIComponent(url)}">`; });
+    } else {
+      boxes.forEach(b => { b.innerHTML = ''; new QRCode(b, { text: url, width: 360, height: 360, colorDark: '#0B1736', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H }); });
+    }
+    boxes.forEach(b => { if (!b.querySelector('.adh-qr-logo')) b.insertAdjacentHTML('beforeend', `<img class="adh-qr-logo" src="${im('cgt-fapt.jpg')}" alt="">`); });
+  };
+  draw();
+}
+document.addEventListener('click', e => { if (e.target.closest('[data-install]')) installApp(); });
 function drawAdhQr() {
   const boxes = $$('[data-adh-qr]'); if (!boxes.length) return;
   const url = ADH_URL(); let tries = 0;
@@ -2710,16 +2743,16 @@ const grpSeenKey = () => 'cse-grp-seen:' + (Store.user ? Store.user.id : '');
 function commTabs(active) {
   const unread = Group.unread && active !== 'discussion' ? `<span class="tab-badge">${Group.unread > 99 ? '99+' : Group.unread}</span>` : '';
   return `<nav class="comm-tabs" aria-label="Communauté">
-    <a href="#/communaute" class="${active === 'fil' ? 'on' : ''}">${icon('users')}Fil d'actualité</a>
+    <a href="#/communaute" class="${active === 'fil' ? 'on' : ''}">${icon('users')}Messagerie</a>
     <a href="#/communaute/discussion" class="${active === 'discussion' ? 'on' : ''}">${icon('chat')}Discussion de groupe${unread}</a>
-    <a href="#/communaute/contact" class="${active === 'contact' ? 'on' : ''}">${icon('send')}Contacter la CGT</a></nav>`;
+    <a href="#/communaute/contact" class="${active === 'contact' ? 'on' : ''}">${icon('send')}Nous contacter</a></nav>`;
 }
 async function contactView() {
   const s = await Store.settings(); groupUnreadCheck();
   return `<div class="page">${pageHead('Communauté', 'Échangez entre collègues, et écrivez à la CGT : vos représentant·e·s vous répondent.')}
     <div class="wrap page-body feed-wrap contact-wrap">${commTabs('contact')}
-      <section class="contact-block" aria-label="Contacter la CGT">
-        <header class="contact-block-head"><span class="grp-ico">${icon('send')}</span><div><h2>Contacter la CGT</h2><p>Une question, une suggestion, une difficulté ? Écrivez-nous ou joignez-nous directement.</p></div></header>
+      <section class="contact-block" aria-label="Nous contacter">
+        <header class="contact-block-head"><span class="grp-ico">${icon('send')}</span><div><h2>Nous contacter</h2><p>Une question, une suggestion, une difficulté ? Écrivez-nous ou joignez-nous directement.</p></div></header>
         <div class="contact-block-body">
           <div class="contact-block-form">
             <div id="c-alert"></div>
