@@ -104,6 +104,31 @@ async function blobCmd(c, a) {
   }
   throw new Error('Commande inconnue ' + c);
 }
+/* Transfert automatique Blob → Redis (une seule fois, dès que Redis est branché) */
+let migration = null;
+function migrateIfNeeded() {
+  if (!(REDIS_URL && REDIS_TOKEN && BLOB_TOKEN)) return Promise.resolve();
+  if (!migration) migration = (async () => {
+    if (await redisHttp(['GET', 'cse:migrated'])) return;
+    const lock = await redisHttp(['SET', 'cse:migrating', '1', 'NX', 'EX', '600']);
+    if (lock !== 'OK') { await new Promise(r => setTimeout(r, 4000)); return; }
+    const blobs = []; let cursor;
+    do { const r = await B().list({ prefix: 'db/', cursor, limit: 1000, token: BLOB_TOKEN }); blobs.push(...r.blobs); cursor = r.hasMore ? r.cursor : undefined; } while (cursor);
+    let n = 0;
+    for (let i = 0; i < blobs.length; i += 8) {
+      await Promise.all(blobs.slice(i, i + 8).map(async b => {
+        const m = b.pathname.match(/^db\/([^/]+)\/([^/]+)\.txt$/); if (!m) return;
+        const key = dec(m[1]), field = dec(m[2]);
+        const value = await fetchVersion(b.url, b.uploadedAt);
+        if (field === '_') await redisHttp(['SET', key, value]); else await redisHttp(['HSET', key, field, value]);
+        n++;
+      }));
+    }
+    await redisHttp(['SET', 'cse:migrated', JSON.stringify({ at: new Date().toISOString(), count: n })]);
+    await redisHttp(['DEL', 'cse:migrating']);
+  })().catch(e => { migration = null; console.error('Migration Blob → Redis', e); });
+  return migration;
+}
 async function redis(...cmd) {
   if (!storageReady()) throw Object.assign(new Error('Stockage non configuré'), { status: 503 });
   if (REDIS_URL && REDIS_TOKEN) return redisHttp(cmd);
@@ -166,7 +191,7 @@ async function need(req, role) {
 
 /* ---------- actions ---------- */
 const A = {
-  async health() { return { ok: true, storage: storageReady(), backend: REDIS_URL && REDIS_TOKEN ? 'redis' : BLOB_TOKEN ? 'blob' : 'none', auth: Boolean(ADMIN_PASSWORD) }; },
+  async health() { let migrated = null; if (REDIS_URL && REDIS_TOKEN) { try { migrated = JSON.parse(await redisHttp(['GET', 'cse:migrated']) || 'null'); } catch {} } return { ok: true, storage: storageReady(), backend: REDIS_URL && REDIS_TOKEN ? 'redis' : BLOB_TOKEN ? 'blob' : 'none', migrated, auth: Boolean(ADMIN_PASSWORD) }; },
 
   async register(req) {
     const b = body(req);
@@ -309,6 +334,7 @@ const A = {
 
 module.exports = async (req, res) => {
   try {
+    await migrateIfNeeded();
     const fn = A[String(req.query.a || 'health')];
     if (!fn) return send(res, 404, { error: 'Action inconnue' });
     const out = await fn(req, res);
