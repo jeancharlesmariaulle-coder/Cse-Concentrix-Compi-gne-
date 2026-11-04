@@ -189,6 +189,30 @@ async function need(req, role) {
   return u;
 }
 
+/* ---------- Adhésions : IBAN chiffré (AES-256-GCM) ---------- */
+const ENC_KEY = crypto.createHash('sha256').update('cse-iban:' + SECRET).digest();
+function encrypt(txt) {
+  if (!txt) return '';
+  const iv = crypto.randomBytes(12); const c = crypto.createCipheriv('aes-256-gcm', ENC_KEY, iv);
+  const enc = Buffer.concat([c.update(String(txt), 'utf8'), c.final()]);
+  return [iv, c.getAuthTag(), enc].map(b => b.toString('base64url')).join('.');
+}
+function decrypt(v) {
+  try { const [iv, tag, enc] = String(v).split('.').map(x => Buffer.from(x, 'base64url'));
+    const d = crypto.createDecipheriv('aes-256-gcm', ENC_KEY, iv); d.setAuthTag(tag);
+    return Buffer.concat([d.update(enc), d.final()]).toString('utf8'); } catch { return ''; }
+}
+function ibanOk(iban) {
+  const s = String(iban || '').replace(/\s+/g, '').toUpperCase();
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(s)) return false;
+  const r = (s.slice(4) + s.slice(0, 4)).replace(/[A-Z]/g, ch => String(ch.charCodeAt(0) - 55));
+  let m = 0; for (const d of r) m = (m * 10 + Number(d)) % 97; return m === 1;
+}
+const ADH_FIELDS = ['civilite', 'nom', 'prenom', 'adresse', 'cp', 'ville', 'email', 'telephone', 'naissance', 'entreprise', 'site',
+  'classification', 'grade', 'fonction', 'coefficient', 'salaire', 'entree', 'temps', 'prelevement', 'stage', 'fait_a',
+  'sepa_nom', 'sepa_adresse', 'sepa_cp', 'sepa_ville', 'tiers_nom', 'message'];
+const SIG_RE = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/;
+
 /* ---------- actions ---------- */
 const A = {
   async health() { let migrated = null; if (REDIS_URL && REDIS_TOKEN) { try { migrated = JSON.parse(await redisHttp(['GET', 'cse:migrated']) || 'null'); } catch {} } return { ok: true, storage: storageReady(), backend: REDIS_URL && REDIS_TOKEN ? 'redis' : BLOB_TOKEN ? 'blob' : 'none', migrated, auth: Boolean(ADMIN_PASSWORD) }; },
@@ -314,6 +338,51 @@ const A = {
     if (b.removeDoc && item.docId) { await redis('DEL', `cse:file:${item.docId}`); for (const k of ['docId', 'docName', 'docType', 'docSize']) delete item[k]; }
     if (col === 'galerie' && !item.fileId && !item.video) throw fail(400, 'Ajoutez une photo, une vidéo ou un lien vidéo.');
     await redis('HSET', key, item.id, JSON.stringify(item)); return { item };
+  },
+
+  async adhesion(req) {
+    // Envoi public (pas besoin de compte) — lecture / suivi réservés aux responsables
+    if (req.method === 'POST' && !req.query.id) {
+      const b = body(req);
+      if (b.website) return { ok: true }; // pot de miel anti-robots
+      await rateLimit(req, 'adh', 5);
+      const it = { id: newId(), created: new Date().toISOString(), status: 'nouvelle' };
+      for (const f of ADH_FIELDS) it[f] = clip(b[f], f === 'message' ? 'message' : f);
+      if (!it.nom || !it.prenom) throw fail(400, 'Indiquez votre nom et votre prénom.');
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(it.email) && !it.telephone) throw fail(400, 'Indiquez un email ou un téléphone.');
+      if (!b.rgpd) throw fail(400, "Merci d'accepter l'utilisation de vos données pour traiter l'adhésion.");
+      if (!SIG_RE.test(String(b.signature || '')) || String(b.signature).length > 200000) throw fail(400, 'Merci de signer le bulletin.');
+      it.signature = b.signature;
+      if (it.prelevement === 'oui') {
+        const iban = String(b.iban || '').replace(/\s+/g, '').toUpperCase();
+        if (!ibanOk(iban)) throw fail(400, "L'IBAN saisi n'est pas valide. Vérifiez-le.");
+        if (!b.sepa_ok) throw fail(400, "Merci de cocher l'autorisation de prélèvement SEPA.");
+        if (!SIG_RE.test(String(b.sepa_signature || '')) || String(b.sepa_signature).length > 200000) throw fail(400, 'Merci de signer le mandat de prélèvement.');
+        it.iban_enc = encrypt(iban); it.iban_fin = iban.slice(-4); it.iban_pays = iban.slice(0, 2);
+        it.sepa_signature = b.sepa_signature;
+      }
+      await redis('HSET', 'cse:adhesions', it.id, JSON.stringify(it));
+      return { ok: true, id: it.id };
+    }
+    await need(req, 'elu');
+    const strip = it => { const o = { ...it }; delete o.iban_enc; return o; };
+    if (req.method === 'GET' && req.query.id) {
+      const v = await redis('HGET', 'cse:adhesions', String(req.query.id)); if (!v) throw fail(404, 'Adhésion introuvable.');
+      const it = JSON.parse(v); const o = strip(it);
+      if (req.query.full && it.iban_enc) o.iban = decrypt(it.iban_enc).replace(/(.{4})/g, '$1 ').trim();
+      return { item: o };
+    }
+    if (req.method === 'GET') {
+      const f = (await redis('HGETALL', 'cse:adhesions')) || []; const items = [];
+      for (let i = 1; i < f.length; i += 2) { try { const it = strip(JSON.parse(f[i])); delete it.signature; delete it.sepa_signature; items.push(it); } catch {} }
+      items.sort((a, b) => String(b.created).localeCompare(String(a.created)));
+      return { items };
+    }
+    if (req.method === 'DELETE') { await redis('HDEL', 'cse:adhesions', String(req.query.id || '')); return { ok: true }; }
+    const v = await redis('HGET', 'cse:adhesions', String(req.query.id)); if (!v) throw fail(404, 'Adhésion introuvable.');
+    const it = JSON.parse(v); const st = String(body(req).status || '');
+    if (!['nouvelle', 'traitee'].includes(st)) throw fail(400, 'Statut inconnu');
+    it.status = st; await redis('HSET', 'cse:adhesions', it.id, JSON.stringify(it)); return { ok: true };
   },
 
   async file(req, res) {
