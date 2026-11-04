@@ -17,7 +17,7 @@ const FIELDS = {
   galerie: ['titre', 'album', 'date', 'video'],
   messages: ['sujet', 'message', 'contact'],
 };
-const SETTINGS = ['email', 'telephone', 'adresse', 'permanences'];
+const SETTINGS = ['email', 'telephone', 'tel_note', 'responsable', 'responsable_tel', 'adresse', 'permanences', 'facebook', 'instagram', 'snapchat', 'tiktok', 'threads', '_v2'];
 const LONG = ['contenu', 'description', 'message', 'permanences'];
 const MAX_FILE = 3.2 * 1024 * 1024;
 
@@ -189,6 +189,59 @@ async function need(req, role) {
   return u;
 }
 
+/* ---------- Messagerie instantanée ---------- */
+const CHAT_MAX = 500, CHAT_KEEP = 400;
+const chatKey = uid => `cse:chat:${uid}`;
+async function chatMeta(uid) { const v = await redis('HGET', 'cse:chats', uid); return v ? JSON.parse(v) : null; }
+async function chatRead(meta, since) {
+  // messages d'index absolu >= since (les plus anciens peuvent avoir été archivés)
+  const base = meta.base || 0, from = Math.max(0, Number(since || 0) - base);
+  if (Number(since || 0) >= meta.n) return [];
+  const raw = (await redis('LRANGE', chatKey(meta.uid), from, -1)) || [];
+  return raw.map(x => { try { return JSON.parse(x); } catch { return null; } }).filter(Boolean);
+}
+async function chatPush(uid, msg, metaInit) {
+  let meta = (await chatMeta(uid)) || { uid, base: 0, n: 0, unreadCgt: 0, unreadUser: 0, ...metaInit };
+  msg.i = meta.n; msg.at = new Date().toISOString();
+  const len = await redis('RPUSH', chatKey(uid), JSON.stringify(msg));
+  meta.n = (meta.base || 0) + Number(len);
+  if (len > CHAT_MAX) { await redis('LTRIM', chatKey(uid), len - CHAT_KEEP, -1); meta.base = meta.n - CHAT_KEEP; }
+  Object.assign(meta, { lastText: msg.text.slice(0, 120), lastAt: msg.at, lastFrom: msg.from });
+  if (msg.from === 'user') meta.unreadCgt = (meta.unreadCgt || 0) + 1; else meta.unreadUser = (meta.unreadUser || 0) + 1;
+  await redis('HSET', 'cse:chats', uid, JSON.stringify(meta));
+  return { msg, meta };
+}
+
+
+/* ---------- Communauté (flux) + réactions et commentaires ---------- */
+const REACTIONS = ['👍', '❤️', '👏', '✊', '😢'];
+const TARGET_RE = /^(actus|events|galerie|feed):[A-Za-z0-9_-]{1,48}$/;
+const FEED_MAX = 300;
+const who = u => u.id === 'admin' ? 'Section CGT' : `${u.prenom} ${u.nom}`.trim();
+async function bumpFeed() { try { await redis('INCR', 'cse:fver'); } catch {} }
+async function socSummary(t) {
+  const f = (await redis('HGETALL', `cse:soc:${t}`)) || []; const r = {}; let c = 0; const last = [];
+  for (let i = 0; i < f.length; i += 2) {
+    if (f[i].startsWith('r:')) r[f[i + 1]] = (r[f[i + 1]] || 0) + 1;
+    else if (f[i].startsWith('c:')) { c++; try { last.push(JSON.parse(f[i + 1])); } catch {} }
+  }
+  const sum = { r, c };
+  if (c || Object.keys(r).length) await redis('HSET', 'cse:socsum', t, JSON.stringify(sum)); else await redis('HDEL', 'cse:socsum', t);
+  return sum;
+}
+async function saveDataFile(f) {
+  const data = String(f && f.data || '');
+  if (!/^data:image\/(jpeg|png|webp);base64,/.test(data)) throw fail(400, 'Photo invalide.');
+  if (data.length > MAX_FILE) throw fail(413, 'Photo trop lourde.');
+  const id = newId(); await redis('SET', `cse:file:${id}`, data);
+  return { fileId: id, fileName: clip(f.name || 'photo.jpg'), fileType: data.slice(5, data.indexOf(';')) };
+}
+async function dropTarget(t) {
+  const f = (await redis('HGETALL', `cse:soc:${t}`)) || [];
+  for (let i = 0; i < f.length; i += 2) if (f[i].startsWith('r:')) await redis('HDEL', `cse:myr:${f[i].slice(2)}`, t);
+  await redis('DEL', `cse:soc:${t}`); await redis('HDEL', 'cse:socsum', t);
+}
+
 /* ---------- Adhésions : IBAN chiffré (AES-256-GCM) ---------- */
 const ENC_KEY = crypto.createHash('sha256').update('cse-iban:' + SECRET).digest();
 function encrypt(txt) {
@@ -301,7 +354,9 @@ const A = {
       await need(req, 'elu'); const id = String(req.query.id || '');
       const prev = await redis('HGET', key, id);
       if (prev) { try { const it = JSON.parse(prev); if (it.fileId) await redis('DEL', `cse:file:${it.fileId}`); if (it.docId) await redis('DEL', `cse:file:${it.docId}`); } catch {} }
-      await redis('HDEL', key, id); return { ok: true };
+      await redis('HDEL', key, id);
+      if (['actus', 'events', 'galerie'].includes(col)) { try { await dropTarget(`${col}:${id}`); } catch {} }
+      return { ok: true };
     }
     // POST
     const b = body(req);
@@ -338,6 +393,137 @@ const A = {
     if (b.removeDoc && item.docId) { await redis('DEL', `cse:file:${item.docId}`); for (const k of ['docId', 'docName', 'docType', 'docSize']) delete item[k]; }
     if (col === 'galerie' && !item.fileId && !item.video) throw fail(400, 'Ajoutez une photo, une vidéo ou un lien vidéo.');
     await redis('HSET', key, item.id, JSON.stringify(item)); return { item };
+  },
+
+  async chat(req) {
+    if (!(REDIS_URL && REDIS_TOKEN)) throw fail(503, 'La messagerie nécessite le stockage Upstash.');
+    const u = await need(req); const op = String(req.query.op || 'me'); const elu = u.role === 'elu';
+    const read = req.query.read === '1';
+    if (op === 'me') { // conversation de la personne connectée avec la section
+      const meta = await chatMeta(u.id);
+      if (!meta) return { n: 0, unread: 0, messages: [] };
+      const messages = await chatRead(meta, req.query.since);
+      const unread = meta.unreadUser || 0;
+      if (read && unread) { meta.unreadUser = 0; await redis('HSET', 'cse:chats', u.id, JSON.stringify(meta)); }
+      return { n: meta.n, unread: read ? 0 : unread, messages };
+    }
+    if (op === 'send') {
+      const b = body(req); const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
+      if (!text) throw fail(400, 'Message vide.');
+      await rateLimit(req, 'chat', 120);
+      if (b.to) { // réponse de la section
+        if (!elu) throw fail(403, 'Réservé aux responsables.');
+        const meta = await chatMeta(String(b.to)); if (!meta) throw fail(404, 'Conversation introuvable.');
+        const by = u.id === 'admin' ? 'Section CGT' : `${u.prenom} · CGT`;
+        const r = await chatPush(meta.uid, { from: 'cgt', by, text });
+        return { n: r.meta.n, msg: r.msg };
+      }
+      const r = await chatPush(u.id, { from: 'user', by: `${u.prenom} ${u.nom}`, text },
+        { name: `${u.prenom} ${u.nom}`, email: u.email, service: u.service || '' });
+      return { n: r.meta.n, msg: r.msg };
+    }
+    if (!elu) throw fail(403, 'Réservé aux responsables.');
+    if (op === 'inbox') {
+      const f = (await redis('HGETALL', 'cse:chats')) || []; const items = [];
+      for (let i = 1; i < f.length; i += 2) { try { items.push(JSON.parse(f[i])); } catch {} }
+      items.sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt)));
+      return { items, unread: items.reduce((t, c) => t + (c.unreadCgt ? 1 : 0), 0) };
+    }
+    const uid = String(req.query.uid || ''); const meta = await chatMeta(uid);
+    if (!meta) throw fail(404, 'Conversation introuvable.');
+    if (op === 'thread') {
+      const messages = await chatRead(meta, req.query.since);
+      if (read && meta.unreadCgt) { meta.unreadCgt = 0; await redis('HSET', 'cse:chats', uid, JSON.stringify(meta)); }
+      return { n: meta.n, meta, messages };
+    }
+    if (op === 'delete') { await redis('DEL', chatKey(uid)); await redis('HDEL', 'cse:chats', uid); return { ok: true }; }
+    throw fail(400, 'Action inconnue');
+  },
+
+
+  /* Réactions + commentaires : résumé global, ou commentaires d'un élément */
+  async social(req) {
+    const u = await need(req);
+    if (req.method === 'GET') {
+      const t = String(req.query.t || '');
+      if (t) {
+        if (!TARGET_RE.test(t)) throw fail(400, 'Élément inconnu');
+        const f = (await redis('HGETALL', `cse:soc:${t}`)) || []; const items = [];
+        for (let i = 0; i < f.length; i += 2) if (f[i].startsWith('c:')) { try { items.push(JSON.parse(f[i + 1])); } catch {} }
+        items.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+        return { comments: items };
+      }
+      const [sumF, mineF] = await Promise.all([redis('HGETALL', 'cse:socsum'), redis('HGETALL', `cse:myr:${u.id}`)]);
+      const sum = {}, mine = {};
+      for (let i = 0; i < (sumF || []).length; i += 2) { try { sum[sumF[i]] = JSON.parse(sumF[i + 1]); } catch {} }
+      for (let i = 0; i < (mineF || []).length; i += 2) mine[mineF[i]] = mineF[i + 1];
+      return { sum, mine };
+    }
+    const b = body(req); const t = String(b.t || req.query.t || '');
+    if (!TARGET_RE.test(t)) throw fail(400, 'Élément inconnu');
+    const op = String(req.query.op || '');
+    if (op === 'react') {
+      const e = String(b.e || '');
+      const prev = await redis('HGET', `cse:soc:${t}`, `r:${u.id}`);
+      if (!e || e === prev) { await redis('HDEL', `cse:soc:${t}`, `r:${u.id}`); await redis('HDEL', `cse:myr:${u.id}`, t); }
+      else { if (!REACTIONS.includes(e)) throw fail(400, 'Réaction inconnue'); await redis('HSET', `cse:soc:${t}`, `r:${u.id}`, e); await redis('HSET', `cse:myr:${u.id}`, t, e); }
+      const sum = await socSummary(t); if (t.startsWith('feed:')) await bumpFeed();
+      return { sum, mine: !e || e === prev ? '' : e };
+    }
+    if (op === 'comment') {
+      const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 1000);
+      if (!text) throw fail(400, 'Commentaire vide.');
+      await rateLimit(req, 'cmt', 40);
+      const c = { id: newId(), uid: u.id, by: who(u), elu: u.role === 'elu', text, at: new Date().toISOString() };
+      await redis('HSET', `cse:soc:${t}`, `c:${c.id}`, JSON.stringify(c));
+      const sum = await socSummary(t); if (t.startsWith('feed:')) await bumpFeed();
+      return { comment: c, sum };
+    }
+    if (op === 'uncomment') {
+      const id = String(b.id || ''); const v = await redis('HGET', `cse:soc:${t}`, `c:${id}`);
+      if (!v) throw fail(404, 'Commentaire introuvable.');
+      const c = JSON.parse(v); if (c.uid !== u.id && u.role !== 'elu') throw fail(403, 'Vous ne pouvez supprimer que vos propres commentaires.');
+      await redis('HDEL', `cse:soc:${t}`, `c:${id}`);
+      const sum = await socSummary(t); if (t.startsWith('feed:')) await bumpFeed();
+      return { sum };
+    }
+    throw fail(400, 'Action inconnue');
+  },
+
+  /* Communauté : flux de publications entre membres */
+  async feed(req) {
+    const u = await need(req);
+    if (req.method === 'GET') {
+      if (req.query.v) return { v: Number(await redis('GET', 'cse:fver') || 0) };
+      const [f, v] = await Promise.all([redis('HGETALL', 'cse:feed'), redis('GET', 'cse:fver')]); const items = [];
+      for (let i = 1; i < (f || []).length; i += 2) { try { items.push(JSON.parse(f[i])); } catch {} }
+      items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+      return { items: items.slice(0, 80), v: Number(v || 0) };
+    }
+    if (req.method === 'DELETE') {
+      const id = String(req.query.id || ''); const prev = await redis('HGET', 'cse:feed', id);
+      if (!prev) return { ok: true };
+      const p = JSON.parse(prev); if (p.uid !== u.id && u.role !== 'elu') throw fail(403, 'Vous ne pouvez supprimer que vos propres publications.');
+      if (p.fileId) await redis('DEL', `cse:file:${p.fileId}`);
+      await redis('HDEL', 'cse:feed', id); await dropTarget(`feed:${id}`); await bumpFeed();
+      return { ok: true };
+    }
+    const b = body(req); const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 3000);
+    if (!text && !(b.file && b.file.data)) throw fail(400, 'Publication vide.');
+    await rateLimit(req, 'post', 15);
+    const p = { id: newId(), uid: u.id, by: who(u), elu: u.role === 'elu', service: u.id === 'admin' ? '' : (u.service || ''), text, at: new Date().toISOString() };
+    if (b.file && b.file.data) Object.assign(p, await saveDataFile(b.file));
+    await redis('HSET', 'cse:feed', p.id, JSON.stringify(p));
+    // on garde les FEED_MAX publications les plus récentes
+    const n = Number(await redis('HLEN', 'cse:feed'));
+    if (n > FEED_MAX) {
+      const f = (await redis('HGETALL', 'cse:feed')) || []; const all = [];
+      for (let i = 1; i < f.length; i += 2) { try { all.push(JSON.parse(f[i])); } catch {} }
+      all.sort((a, b2) => String(a.at).localeCompare(String(b2.at)));
+      for (const old of all.slice(0, n - FEED_MAX)) { if (old.fileId) await redis('DEL', `cse:file:${old.fileId}`); await redis('HDEL', 'cse:feed', old.id); await dropTarget(`feed:${old.id}`); }
+    }
+    await bumpFeed();
+    return { item: p };
   },
 
   async adhesion(req) {
