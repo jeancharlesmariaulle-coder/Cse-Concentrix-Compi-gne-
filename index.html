@@ -880,6 +880,22 @@ body:has(#install-banner:not([hidden])) .chat-fab{bottom:104px}
 .hero-poster img{max-height:360px!important}
 @media (max-width:720px){.hero-poster img{width:68%!important;max-height:none!important}}
 
+/* Contact intégré à Communauté : un seul bloc */
+.contact-wrap{max-width:1100px}
+.contact-block{background:#fff;border-radius:20px;box-shadow:var(--shadow);overflow:hidden}
+.contact-block-head{display:flex;align-items:center;gap:14px;padding:18px 24px;background:linear-gradient(120deg,#0E1A33,#1B2C55);color:#fff}
+.contact-block-head h2{margin:0;font-size:20px;color:#fff}
+.contact-block-head p{margin:2px 0 0;font-size:14px;opacity:.85}
+.contact-block-body{display:grid;grid-template-columns:1.2fr .8fr;gap:0}
+.contact-block-form{padding:22px 24px}
+.contact-block-side{padding:18px;background:#F5F6FA;display:flex;flex-direction:column;gap:10px;border-left:1px solid #E6E8EF}
+.contact-block-side .info-card{margin:0;box-shadow:none;padding:14px 16px}
+.contact-block-side .info-card h3{font-size:15px;margin:0 0 6px}
+.contact-block-side .info-card p{margin:0}
+@media (max-width:900px){.contact-block-body{grid-template-columns:1fr}.contact-block-side{border-left:0;border-top:1px solid #E6E8EF}}
+@media (max-width:720px){.contact-block-head{padding:14px 16px}.contact-block-form{padding:16px}.contact-block-side{padding:12px}
+  .comm-tabs{gap:4px;padding:5px}.comm-tabs a{flex-direction:column;gap:3px;font-size:12px;padding:8px 4px;line-height:1.2}}
+
 </style>
 </head>
 <body>
@@ -901,7 +917,6 @@ body:has(#install-banner:not([hidden])) .chat-fab{bottom:104px}
       <a href="#/documents" data-route="documents"><svg><use href="#i-folder"/></svg>Documents</a>
       <a href="#/galerie" data-route="galerie"><svg><use href="#i-image"/></svg>Galerie</a>
       <a href="#/communaute" data-route="communaute"><svg><use href="#i-users"/></svg>Communauté</a>
-      <a href="#/contact" data-route="contact"><svg><use href="#i-send"/></svg>Contact</a>
       <div class="account-menu">
         <button class="account-btn" id="account-btn" aria-haspopup="true" aria-expanded="false">
           <svg><use href="#i-user"/></svg><span>Mon espace</span><svg class="chev"><use href="#i-chevron-down"/></svg>
@@ -941,7 +956,7 @@ body:has(#install-banner:not([hidden])) .chat-fab{bottom:104px}
     </div>
     <div>
       <h4>La section</h4>
-      <a href="#/adhesion"><strong>Adhérer à la CGT</strong></a><a href="#/elus">Vos élu·e·s</a><a href="#/contact">Nous contacter</a><a href="#/acces">QR code d'accès</a><a href="#/espace">Espace élu·e</a>
+      <a href="#/adhesion"><strong>Adhérer à la CGT</strong></a><a href="#/elus">Vos élu·e·s</a><a href="#/communaute/contact">Nous contacter</a><a href="#/acces">QR code d'accès</a><a href="#/espace">Espace élu·e</a>
     </div>
   </div>
   <div class="wrap footer-bottom">© <span id="year"></span> CGT Concentrix Compiègne · Site de la section syndicale</div>
@@ -1481,7 +1496,7 @@ const Views = {
         <div class="cta-card">
           <h3>Une question ? Contactez-nous !</h3>
           <p>Notre équipe est là pour vous répondre.</p>
-          <a class="btn" href="#/contact">Nous contacter${icon('send')}</a>
+          <a class="btn" href="#/communaute/contact">Nous contacter${icon('send')}</a>
           <div class="cta-bubble" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M32 6c14.4 0 26 10.3 26 23S46.4 52 32 52c-3.5 0-6.8-.6-9.8-1.7L10 56l3.6-10.2C9.5 41.6 6 35.6 6 29 6 16.3 17.6 6 32 6Z"/><circle cx="24" cy="25" r="1.6" fill="#fff"/><circle cx="40" cy="25" r="1.6" fill="#fff"/><path d="M22 33c2.6 4 6 6 10 6s7.4-2 10-6"/></svg></div>
         </div>
       </section>
@@ -1597,33 +1612,11 @@ const Views = {
   async elus() {
     return `<div class="page">${pageHead('Vos élu·e·s', 'La composition actuelle du Comité Social et Économique, par collège électoral.')}
       <div class="wrap page-body">${ELUS.map(c => `<section class="college"><h2>${c.college}</h2>${c.groups.map(g => `<p class="role">${g.role}</p><div class="reps">${g.people.map(([f, l, s]) => `<div class="rep"><img src="${im('elu-' + s + '.jpg')}" alt="${esc(f + ' ' + l)}" loading="lazy"><div class="first">${esc(f)}</div><div class="last">${esc(l)}</div></div>`).join('')}</div>`).join('')}</section>`).join('')}
-        <div class="info-card" style="max-width:640px"><h3>${icon('send')}Besoin de parler à un·e élu·e ?</h3><p>Adressez-vous directement à l'un·e d'entre nous sur site, ou écrivez-nous via la <a href="#/contact">page Contact</a>.</p></div>
+        <div class="info-card" style="max-width:640px"><h3>${icon('send')}Besoin de parler à un·e élu·e ?</h3><p>Adressez-vous directement à l'un·e d'entre nous sur site, ou écrivez-nous dans <a href="#/communaute/contact">Communauté → Contacter la CGT</a>.</p></div>
       </div></div>`;
   },
 
-  async contact() {
-    const s = await Store.settings();
-    const cards = contactCards(contactInfo(s));
-    const editHint = '';
-    return `<div class="page">${pageHead('Contact', 'Une question, une suggestion, une difficulté ? Écrivez à la CGT, vos représentant·e·s vous répondent.')}
-      <div class="wrap page-body">${editHint}<div class="two-col">
-        <div class="form-card">
-          <div id="c-alert"></div>
-          <form id="contact-form" novalidate>
-            <p class="sender">Message envoyé par <strong>${esc(fullName(Store.user))}</strong> (${esc(Store.user.email)})</p>
-            <div class="field"><label for="c-sujet">Sujet</label><select id="c-sujet" name="sujet"><option>Question générale</option><option>Conditions de travail</option><option>Droits / juridique</option><option>Avantages / billetterie</option><option>Signalement</option><option>Suggestion</option><option>Autre</option></select></div>
-            <div class="field"><label for="c-msg">Message</label><textarea id="c-msg" name="message" required placeholder="Décrivez votre demande…"></textarea></div>
-            <div class="field"><label for="c-contact">Comment vous recontacter ? <span class="hint">(facultatif : téléphone, horaires…)</span></label><input id="c-contact" name="contact"></div>
-            <label class="field-check"><input type="checkbox" name="anonyme" id="c-anon"> Envoyer sans mon nom (anonyme)</label>
-            <button class="btn btn-red" type="submit" style="margin-top:16px">Envoyer le message${icon('send')}</button>
-          </form>
-          <p class="note">Votre message est transmis uniquement aux responsables de la section CGT. Pour une situation très personnelle ou médicale, privilégiez un échange de vive voix avec un·e élu·e.</p>
-        </div>
-        <div>${cards}
-          <div class="info-card"><h3>${icon('users')}En personne</h3><p>Vos élu·e·s sont présent·e·s sur site. <a href="#/elus">Voir qui sont vos élu·e·s</a>.</p></div>
-        </div>
-      </div></div></div>`;
-  },
+  async contact() { return Views.communaute('contact'); },
   afterContact() {
     const f = $('#contact-form'); if (!f) return;
     f.onsubmit = async e => {
@@ -1845,11 +1838,12 @@ async function delItem(col, id) {
 }
 
 /* ---------- Routeur ---------- */
-const ROUTES = ['adhesion', 'communaute', 'accueil', 'actualites', 'agenda', 'avantages', 'documents', 'galerie', 'contact', 'elus', 'acces', 'espace', 'compte'];
+const ROUTES = ['adhesion', 'communaute', 'accueil', 'actualites', 'agenda', 'avantages', 'documents', 'galerie', 'elus', 'acces', 'espace', 'compte'];
 const TITLES = { communaute: 'Communauté', adhesion: "Bulletin d'adhésion", accueil: 'Accueil', actualites: 'Actualités', agenda: 'Agenda', avantages: 'Avantages', documents: 'Documents', galerie: 'Photos & vidéos', contact: 'Contact', elus: 'Vos élu·e·s', acces: "QR code d'accès", espace: 'Tableau de bord', compte: 'Mon compte', auth: 'Connexion' };
 function parseRoute() {
   const h = location.hash.replace(/^#\/?/, '');
   if (['messages', 'comptes', 'coordonnees', 'adhesions'].includes(h)) return { name: 'espace', anchor: h };
+  if (h === 'contact' || h.startsWith('contact/')) return { name: 'communaute', id: 'contact' };
   const [name, id] = h.split('/');
   return { name: ROUTES.includes(name) ? name : 'accueil', id: id ? decodeURIComponent(id) : '' };
 }
@@ -2637,10 +2631,10 @@ async function feedFetch() {
 }
 function feedTick() {
   clearTimeout(Feed.timer);
-  if (parseRoute().name !== 'communaute' || parseRoute().id === 'discussion' || !Store.isLogged()) return;
+  if (parseRoute().name !== 'communaute' || parseRoute().id || !Store.isLogged()) return;
   const idle = Date.now() - Feed.lastAct;
   Feed.timer = setTimeout(async () => {
-    if (document.visibilityState === 'visible' && parseRoute().name === 'communaute' && parseRoute().id !== 'discussion') {
+    if (document.visibilityState === 'visible' && parseRoute().name === 'communaute' && !parseRoute().id) {
       try {
         const { v } = await Store.call('feed', { query: '&v=1' });
         if (v !== Feed.v) {
@@ -2663,6 +2657,7 @@ Object.assign(Views, {
   async communaute(id) {
     if (Store.mode === 'demo') return `<div class="wrap page-body" style="padding-top:40px">${emptyState('', 'Communauté', 'Disponible une fois le stockage en ligne branché.')}</div>`;
     if (id === 'discussion') return groupView();
+    if (id === 'contact') return contactView();
     await Promise.all([feedFetch(), groupUnreadCheck()]);
     const me = Store.user || {};
     return `<div class="page">${pageHead('Communauté', 'Échangez entre collègues : infos, questions, soutien. Les publications apparaissent en direct.')}
@@ -2681,6 +2676,7 @@ Object.assign(Views, {
   },
   afterCommunaute() {
     if ($('#grp')) return groupAfter();
+    if ($('#contact-form')) return Views.afterContact();
     if (!$('#post-form')) return;
     feedList(); reloadOpenComments(); Feed.lastAct = Date.now(); feedTick();
     const pv = $('#post-photo');
@@ -2715,7 +2711,34 @@ function commTabs(active) {
   const unread = Group.unread && active !== 'discussion' ? `<span class="tab-badge">${Group.unread > 99 ? '99+' : Group.unread}</span>` : '';
   return `<nav class="comm-tabs" aria-label="Communauté">
     <a href="#/communaute" class="${active === 'fil' ? 'on' : ''}">${icon('users')}Fil d'actualité</a>
-    <a href="#/communaute/discussion" class="${active === 'discussion' ? 'on' : ''}">${icon('chat')}Discussion de groupe${unread}</a></nav>`;
+    <a href="#/communaute/discussion" class="${active === 'discussion' ? 'on' : ''}">${icon('chat')}Discussion de groupe${unread}</a>
+    <a href="#/communaute/contact" class="${active === 'contact' ? 'on' : ''}">${icon('send')}Contacter la CGT</a></nav>`;
+}
+async function contactView() {
+  const s = await Store.settings(); groupUnreadCheck();
+  return `<div class="page">${pageHead('Communauté', 'Échangez entre collègues, et écrivez à la CGT : vos représentant·e·s vous répondent.')}
+    <div class="wrap page-body feed-wrap contact-wrap">${commTabs('contact')}
+      <section class="contact-block" aria-label="Contacter la CGT">
+        <header class="contact-block-head"><span class="grp-ico">${icon('send')}</span><div><h2>Contacter la CGT</h2><p>Une question, une suggestion, une difficulté ? Écrivez-nous ou joignez-nous directement.</p></div></header>
+        <div class="contact-block-body">
+          <div class="contact-block-form">
+            <div id="c-alert"></div>
+            <form id="contact-form" novalidate>
+              <p class="sender">Message envoyé par <strong>${esc(fullName(Store.user))}</strong> (${esc(Store.user.email)})</p>
+              <div class="field"><label for="c-sujet">Sujet</label><select id="c-sujet" name="sujet"><option>Question générale</option><option>Conditions de travail</option><option>Droits / juridique</option><option>Avantages / billetterie</option><option>Signalement</option><option>Suggestion</option><option>Autre</option></select></div>
+              <div class="field"><label for="c-msg">Message</label><textarea id="c-msg" name="message" required placeholder="Décrivez votre demande…"></textarea></div>
+              <div class="field"><label for="c-contact">Comment vous recontacter ? <span class="hint">(facultatif : téléphone, horaires…)</span></label><input id="c-contact" name="contact"></div>
+              <label class="field-check"><input type="checkbox" name="anonyme" id="c-anon"> Envoyer sans mon nom (anonyme)</label>
+              <button class="btn btn-red" type="submit" style="margin-top:16px">Envoyer le message${icon('send')}</button>
+            </form>
+            <p class="note">Votre message est transmis uniquement aux responsables de la section CGT. Pour une situation très personnelle ou médicale, privilégiez un échange de vive voix avec un·e élu·e.</p>
+          </div>
+          <div class="contact-block-side">${contactCards(contactInfo(s))}
+            <div class="info-card"><h3>${icon('users')}En personne</h3><p>Vos élu·e·s sont présent·e·s sur site. <a href="#/elus">Voir qui sont vos élu·e·s</a>.</p></div>
+          </div>
+        </div>
+      </section>
+    </div></div>`;
 }
 async function groupUnreadCheck() { // pour le petit compteur sur l'onglet
   try { const r = await Store.call('group', { query: '&ping=1' }); const seen = Number(ls.get(grpSeenKey(), 0)); Group.unread = Math.max(0, r.n - seen); } catch {}
