@@ -910,6 +910,21 @@ body:has(#install-banner:not([hidden])) .chat-fab{bottom:104px}
 .app-actions .btn-light{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.3)}
 @media (max-width:720px){.home-app{padding:0 16px}.app-card{flex-direction:column;text-align:center;padding:18px 16px;gap:14px}.app-qr{width:150px;height:150px}.app-actions{justify-content:center}.app-actions .btn{width:100%;justify-content:center}}
 
+/* Accueil : bloc communication (réseaux + site) */
+.home-follow{max-width:1360px;margin:22px auto 0;padding:0 28px}
+.follow-card{background:#fff;border-radius:20px;box-shadow:var(--shadow);padding:20px 24px}
+.follow-head{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.follow-head h3{margin:0;font-size:clamp(17px,1.5vw,21px)}
+.follow-head p{margin:2px 0 0;color:var(--ink-2);font-size:14px}
+.follow-grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr));margin:0}
+.s-site .s-ico{background:#0B1736;color:#fff}
+@media (max-width:720px){.home-follow{padding:0 16px}.follow-card{padding:16px}.follow-grid{grid-template-columns:1fr}}
+.follow-grid{grid-template-columns:repeat(3,1fr)}
+.follow-grid .social{overflow-wrap:normal;word-break:normal}
+.follow-grid .social>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:1000px){.follow-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:620px){.follow-grid{grid-template-columns:1fr}}
+
 </style>
 </head>
 <body>
@@ -1458,7 +1473,7 @@ const Views = {
   },
 
   async accueil() {
-    const [actus, events] = await Promise.all([safeList('actus'), safeList('events')]);
+    const [actus, events, sett] = await Promise.all([safeList('actus'), safeList('events'), Store.settings().catch(() => ({}))]);
     const a = sortActus(actus).slice(0, 4);
     const t = today();
     const next = events.filter(e => (e.date || '') >= t).sort((x, y) => (x.date + (x.heure || '')).localeCompare(y.date + (y.heure || ''))).slice(0, 3);
@@ -1506,6 +1521,7 @@ const Views = {
         <div><h3>Vos élu·e·s du CSE</h3><p>27 représentant·e·s à votre écoute, titulaires et suppléant·e·s.</p></div>
         <a class="btn btn-light" href="#/elus">Voir l'équipe${icon('arrow')}</a>
       </div></section>
+      ${followBlock(contactInfo(sett))}
       <section class="home-app">
         <div class="app-card">
           <div class="app-qr" data-app-qr role="img" aria-label="QR code pour installer l'application"></div>
@@ -2389,18 +2405,30 @@ const SOCIAL = [
   ['threads', 'Threads', null, v => /^https?:/.test(v) ? v : `https://www.threads.net/@${v.replace(/^@/, '')}`],
 ];
 const telHref = t => String(t || '').replace(/[^\d+]/g, '');
-function contactCards(c) {
-  const socials = SOCIAL.filter(([k]) => c[k]).map(([k, label, nice, url]) => {
+function socialLinks(c) {
+  return SOCIAL.filter(([k]) => c[k]).map(([k, label, nice, url]) => {
     const v = c[k]; const shown = nice && /^https?:/.test(v) ? nice : (/^https?:/.test(v) ? v.replace(/^https?:\/\/(www\.)?/, '') : '@' + v.replace(/^@/, ''));
     return `<a class="social s-${k}" href="${esc(safeUrl(url(v)) || '#')}" target="_blank" rel="noopener"><span class="s-ico">${icon(k)}</span><span><small>${label}</small>${esc(shown)}</span></a>`;
   }).join('');
+}
+function followBlock(c) {
+  const site = location.origin.replace(/^https?:\/\//, '');
+  return `<section class="home-follow" aria-label="Communication et réseaux">
+    <div class="follow-card">
+      <div class="follow-head"><span class="grp-ico">${icon('users')}</span><div><h3>Suivez nos actions et l'actu</h3><p>Retrouvez la CGT Concentrix Compiègne sur les réseaux et sur le site.</p></div></div>
+      <div class="socials follow-grid">${socialLinks(c)}
+        <a class="social s-site" href="${esc(location.origin + '/')}"><span class="s-ico">${icon('arrow')}</span><span><small>Site & application</small>${esc(site)}</span></a>
+      </div>
+    </div>
+  </section>`;
+}
+function contactCards(c) {
   return `
     <div class="info-card chat-card"><h3>${icon('chat')}Discuter en direct</h3><p>Écrivez à la section dans la messagerie instantanée, comme sur Messenger.</p>
       <button class="btn btn-magenta" data-chat-open>${icon('chat')}Ouvrir la messagerie</button></div>
     ${c.email ? `<div class="info-card navy"><h3 style="color:#fff">${icon('mail')}Email de la section</h3><p><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></p></div>` : ''}
     ${c.telephone ? `<div class="info-card navy"><h3 style="color:#fff">${icon('phone')}Téléphone</h3><p><a href="tel:${esc(telHref(c.telephone))}">${esc(c.telephone)}</a>${c.tel_note ? `<br><span class="tel-note">${esc(c.tel_note)}</span>` : ''}</p></div>` : ''}
     ${c.responsable ? `<div class="info-card"><h3>${icon('user')}Votre responsable</h3><p>${esc(c.responsable)}${c.responsable_tel ? `<br><a href="tel:${esc(telHref(c.responsable_tel))}"><strong>${esc(c.responsable_tel)}</strong></a>` : ''}</p></div>` : ''}
-    ${socials ? `<div class="info-card"><h3>${icon('users')}Suivez nos actions et l'actu</h3><div class="socials">${socials}</div></div>` : ''}
     ${c.adresse ? `<div class="info-card"><h3>${icon('pin')}Adresse</h3><p style="white-space:pre-wrap">${esc(c.adresse)}</p></div>` : ''}
     ${c.permanences ? `<div class="info-card"><h3>${icon('clock')}Permanences</h3><p style="white-space:pre-wrap">${esc(c.permanences)}</p></div>` : ''}`;
 }
