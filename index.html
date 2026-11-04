@@ -776,6 +776,49 @@ body:has(#install-banner:not([hidden])) .chat-fab{bottom:104px}
   .account-drop{position:static;margin-top:8px}
 }
 
+/* ---------- Communauté : onglets + discussion de groupe ---------- */
+.comm-tabs{display:flex;gap:6px;background:#fff;border-radius:16px;padding:6px;box-shadow:var(--shadow);margin-bottom:16px}
+.comm-tabs a{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:11px 10px;border-radius:12px;font-weight:700;font-size:14.5px;text-decoration:none;color:var(--ink-2);text-align:center}
+.comm-tabs a svg{width:19px;height:19px;flex-shrink:0}
+.comm-tabs a.on{background:linear-gradient(120deg,#E5007E,#E3165B);color:#fff}
+.tab-badge{background:var(--red);color:#fff;border-radius:999px;font-size:11.5px;padding:1px 7px;margin-left:2px}
+.grp{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);display:flex;flex-direction:column;height:min(70vh,680px);min-height:420px;overflow:hidden}
+.grp-head{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.grp-ico{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#E5007E,#F04E23);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.grp-head strong{display:block}
+.grp-head small{display:flex;align-items:center;gap:6px;color:var(--c-green);font-weight:600;font-size:12.5px}
+.grp-list{flex:1;overflow-y:auto;padding:14px 12px;background:#F7F8FB;overscroll-behavior:contain}
+.grp-day{text-align:center;font-size:12px;font-weight:700;color:var(--muted);margin:12px 0 8px;text-transform:capitalize}
+.grp-msg{display:flex;gap:8px;align-items:flex-end;margin-top:10px;max-width:100%}
+.grp-msg.cont{margin-top:3px}
+.grp-msg.cont .avatar{visibility:hidden}
+.grp-msg.mine{justify-content:flex-end}
+.grp-col{display:flex;flex-direction:column;max-width:78%;min-width:0}
+.grp-msg.mine .grp-col{align-items:flex-end}
+.grp-name{font-size:12px;font-weight:700;color:var(--ink-2);margin:0 0 3px 10px}
+.grp-bubble{background:#fff;border:1px solid var(--line);border-radius:18px;padding:8px 12px 6px;position:relative;max-width:100%;overflow:hidden}
+.grp-msg.mine .grp-bubble{background:linear-gradient(135deg,#E5007E,#E3165B);color:#fff;border-color:transparent}
+.grp-bubble p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14.5px;line-height:1.45}
+.grp-bubble a{color:inherit;text-decoration:underline}
+.grp-bubble img,.grp-bubble video{display:block;max-width:100%;max-height:340px;border-radius:12px;margin:2px 0 6px;background:#000}
+.grp-bubble.media-only{padding:4px 4px 6px}
+.grp-time{display:block;text-align:right;font-size:10.5px;opacity:.65;margin-top:2px}
+.grp-msg.deleted .grp-bubble{background:transparent!important;color:var(--muted)!important;border:1px dashed var(--line)!important}
+.grp-del{border:0;background:none;color:var(--muted);font-size:11.5px;cursor:pointer;padding:2px 8px;opacity:0;transition:opacity .15s}
+.grp-msg:hover .grp-del,.grp-msg:focus-within .grp-del{opacity:1}
+@media (hover:none){.grp-del{opacity:.7}}
+.grp-empty{text-align:center;color:var(--ink-2);padding:40px 20px}
+.grp-empty svg{width:42px;height:42px;color:var(--magenta)}
+.grp-file{display:flex;align-items:center;gap:10px;padding:8px 14px;border-top:1px solid var(--line);font-size:13.5px}
+.grp-file[hidden]{display:none}
+.grp-file img{height:60px;border-radius:8px}
+.grp-form{display:flex;align-items:flex-end;gap:8px;padding:10px 12px;border-top:1px solid var(--line);background:#fff}
+.grp-form textarea{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:20px;padding:9px 14px;font:inherit;font-size:15px;resize:none;max-height:160px}
+.grp-form textarea:focus{outline:0;border-color:var(--magenta)}
+.grp-form .send{background:var(--magenta);color:#fff;flex-shrink:0}
+.grp-attach{cursor:pointer;flex-shrink:0}
+@media (max-width:720px){.grp{height:calc(100dvh - 260px);min-height:380px}.grp-col{max-width:86%}.comm-tabs a{font-size:13.5px;padding:10px 6px}}
+
 </style>
 </head>
 <body>
@@ -2531,10 +2574,10 @@ async function feedFetch() {
 }
 function feedTick() {
   clearTimeout(Feed.timer);
-  if (parseRoute().name !== 'communaute' || !Store.isLogged()) return;
+  if (parseRoute().name !== 'communaute' || parseRoute().id === 'discussion' || !Store.isLogged()) return;
   const idle = Date.now() - Feed.lastAct;
   Feed.timer = setTimeout(async () => {
-    if (document.visibilityState === 'visible' && parseRoute().name === 'communaute') {
+    if (document.visibilityState === 'visible' && parseRoute().name === 'communaute' && parseRoute().id !== 'discussion') {
       try {
         const { v } = await Store.call('feed', { query: '&v=1' });
         if (v !== Feed.v) {
@@ -2554,12 +2597,13 @@ function feedTick() {
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && parseRoute().name === 'communaute') { Feed.lastAct = Date.now(); feedTick(); } });
 
 Object.assign(Views, {
-  async communaute() {
+  async communaute(id) {
     if (Store.mode === 'demo') return `<div class="wrap page-body" style="padding-top:40px">${emptyState('', 'Communauté', 'Disponible une fois le stockage en ligne branché.')}</div>`;
-    await feedFetch();
+    if (id === 'discussion') return groupView();
+    await Promise.all([feedFetch(), groupUnreadCheck()]);
     const me = Store.user || {};
     return `<div class="page">${pageHead('Communauté', 'Échangez entre collègues : infos, questions, soutien. Les publications apparaissent en direct.')}
-      <div class="wrap page-body feed-wrap">
+      <div class="wrap page-body feed-wrap">${commTabs('fil')}
         <div class="feed-live" id="feed-live"><span class="live-dot"></span>En direct</div>
         <form class="form-card post-box" id="post-form">
           <div class="post-box-top"><span class="avatar initials sm ${me.role === 'elu' ? 'elu' : ''}">${esc(initialsOf(fullName(me)))}</span>
@@ -2573,6 +2617,7 @@ Object.assign(Views, {
       </div></div>`;
   },
   afterCommunaute() {
+    if ($('#grp')) return groupAfter();
     if (!$('#post-form')) return;
     feedList(); reloadOpenComments(); Feed.lastAct = Date.now(); feedTick();
     const pv = $('#post-photo');
@@ -2592,6 +2637,128 @@ document.addEventListener('click', async e => {
   if (!confirm('Supprimer cette publication ?')) return;
   try { await Store.call('feed', { method: 'DELETE', query: '&id=' + encodeURIComponent(d.dataset.postDel) }); await feedFetch(); feedList(); toast('Publication supprimée.'); }
   catch (x) { toast(x.message); }
+});
+
+/* =========================================================================
+   Discussion de groupe (Communauté → onglet « Discussion »)
+   Salon commun à tous les membres connectés : texte, photos, petites vidéos.
+   Rafraîchissement économe : 4 s quand on écrit / lit, puis 15 s, puis 60 s ;
+   rien quand l'écran est caché ou qu'on quitte l'onglet.
+   ========================================================================= */
+const Group = { n: 0, v: 0, msgs: [], timer: null, lastAct: 0, busy: false, file: null, unread: 0 };
+const grpSeenKey = () => 'cse-grp-seen:' + (Store.user ? Store.user.id : '');
+
+function commTabs(active) {
+  const unread = Group.unread && active !== 'discussion' ? `<span class="tab-badge">${Group.unread > 99 ? '99+' : Group.unread}</span>` : '';
+  return `<nav class="comm-tabs" aria-label="Communauté">
+    <a href="#/communaute" class="${active === 'fil' ? 'on' : ''}">${icon('users')}Fil d'actualité</a>
+    <a href="#/communaute/discussion" class="${active === 'discussion' ? 'on' : ''}">${icon('chat')}Discussion de groupe${unread}</a></nav>`;
+}
+async function groupUnreadCheck() { // pour le petit compteur sur l'onglet
+  try { const r = await Store.call('group', { query: '&ping=1' }); const seen = Number(ls.get(grpSeenKey(), 0)); Group.unread = Math.max(0, r.n - seen); } catch {}
+}
+
+function grpMsgHtml(m, prev) {
+  const me = Store.user || {}; const mine = m.uid === me.id;
+  const sameAuthor = prev && prev.uid === m.uid && !prev.deleted && (new Date(m.at) - new Date(prev.at)) < 5 * 60e3;
+  const day = new Date(m.at).toDateString(); const newDay = !prev || new Date(prev.at).toDateString() !== day;
+  const sep = newDay ? `<div class="grp-day">${new Date(m.at).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</div>` : '';
+  if (m.deleted) return sep + `<div class="grp-msg ${mine ? 'mine' : ''} deleted" data-i="${m.i}"><div class="grp-bubble"><em>Message supprimé</em></div></div>`;
+  const media = m.fileId ? (/^video\//.test(m.fileType) ? `<video src="${Store.link(m.fileId, m.fileName)}" controls playsinline preload="metadata"></video>`
+    : `<a href="${Store.link(m.fileId, m.fileName)}" target="_blank" rel="noopener"><img src="${Store.link(m.fileId, m.fileName)}" alt="" loading="lazy"></a>`) : '';
+  const canDel = mine || me.role === 'elu';
+  return sep + `<div class="grp-msg ${mine ? 'mine' : ''} ${sameAuthor && !newDay ? 'cont' : ''}" data-i="${m.i}">
+    ${mine ? '' : `<span class="avatar initials xs ${m.elu ? 'elu' : ''}">${esc(initialsOf(m.by))}</span>`}
+    <div class="grp-col">
+      ${mine || (sameAuthor && !newDay) ? '' : `<div class="grp-name">${esc(m.by)}${m.elu ? ' <span class="badge-cgt">CGT</span>' : ''}</div>`}
+      <div class="grp-bubble ${media && !m.text ? 'media-only' : ''}">${media}${m.text ? `<p>${linkify(m.text)}</p>` : ''}
+        <span class="grp-time">${new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span></div>
+      ${canDel ? `<button type="button" class="grp-del" data-grp-del="${m.i}" aria-label="Supprimer ce message">Supprimer</button>` : ''}
+    </div></div>`;
+}
+function grpRender(scroll) {
+  const box = $('#grp-list'); if (!box) return;
+  const near = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+  box.innerHTML = Group.msgs.length ? Group.msgs.map((m, k) => grpMsgHtml(m, Group.msgs[k - 1])).join('')
+    : `<div class="grp-empty">${icon('chat')}<p><strong>Le salon est ouvert !</strong><br>Dites bonjour aux collègues : tous les membres connectés voient les messages en direct.</p></div>`;
+  if (scroll || near) box.scrollTop = box.scrollHeight;
+  ls.set(grpSeenKey(), Group.n); Group.unread = 0;
+}
+async function grpLoad(full) {
+  const q = full || !Group.msgs.length ? '' : '&since=' + Group.n;
+  const r = await Store.call('group', { query: q });
+  if (full || !Group.msgs.length) Group.msgs = r.messages; else Group.msgs.push(...r.messages.filter(m => !Group.msgs.some(x => x.i === m.i)));
+  if (Group.msgs.length > 300) Group.msgs = Group.msgs.slice(-300);
+  Group.n = r.n; Group.v = r.v;
+  return r.messages.length;
+}
+function grpTick() {
+  clearTimeout(Group.timer);
+  const rt = parseRoute(); if (rt.name !== 'communaute' || rt.id !== 'discussion' || !Store.isLogged()) return;
+  const idle = Date.now() - Group.lastAct;
+  Group.timer = setTimeout(async () => {
+    const r2 = parseRoute();
+    if (document.visibilityState === 'visible' && r2.name === 'communaute' && r2.id === 'discussion') {
+      try {
+        const p = await Store.call('group', { query: '&ping=1' });
+        if (p.v !== Group.v) { await grpLoad(true); grpRender(); }
+        else if (p.n !== Group.n) { const got = await grpLoad(false); if (got) { grpRender(); Group.lastAct = Math.max(Group.lastAct, Date.now() - 30e3); } }
+      } catch {}
+    }
+    grpTick();
+  }, idle < 120e3 ? 4e3 : idle < 600e3 ? 15e3 : 60e3);
+}
+['pointerdown', 'keydown'].forEach(t => document.addEventListener(t, () => { Group.lastAct = Date.now(); }, { passive: true }));
+document.addEventListener('visibilitychange', () => { const r = parseRoute(); if (document.visibilityState === 'visible' && r.name === 'communaute' && r.id === 'discussion') { Group.lastAct = Date.now(); grpTick(); } });
+
+function groupView() {
+  return `<div class="page">${pageHead('Communauté', 'Le salon de discussion de toutes et tous les membres : discutez, rigolez, partagez photos et vidéos.')}
+    <div class="wrap page-body feed-wrap">${commTabs('discussion')}
+      <section class="grp" id="grp" aria-label="Discussion de groupe">
+        <header class="grp-head"><span class="grp-ico">${icon('users')}</span><div><strong>Salon des collègues</strong><small><span class="live-dot"></span>En direct · visible par tous les membres</small></div></header>
+        <div class="grp-list" id="grp-list" aria-live="polite"><p class="note" style="text-align:center;padding:30px">Chargement…</p></div>
+        <div class="grp-file" id="grp-file" hidden><span id="grp-file-prev"></span><button type="button" class="icon-btn" id="grp-file-x" aria-label="Retirer le fichier">${icon('x')}</button></div>
+        <form class="grp-form" id="grp-form">
+          <label class="icon-btn grp-attach" title="Photo ou vidéo" aria-label="Ajouter une photo ou une vidéo"><input type="file" id="grp-input" accept="image/*,video/*" hidden>${icon('image')}</label>
+          <textarea id="grp-text" rows="1" maxlength="2000" placeholder="Écrire au groupe…" aria-label="Écrire au groupe"></textarea>
+          <button class="icon-btn send" id="grp-send" aria-label="Envoyer">${icon('send')}</button>
+        </form>
+      </section>
+      <p class="note feed-rules">Ambiance conviviale et respectueuse : pas d'attaques personnelles ni d'informations confidentielles. Les responsables CGT peuvent retirer un message. Vidéos : 2,4 Mo maximum (sinon, partagez un lien).</p>
+    </div></div>`;
+}
+async function groupAfter() {
+  Group.lastAct = Date.now();
+  try { await grpLoad(true); grpRender(true); } catch (e) { $('#grp-list').innerHTML = `<p class="note" style="padding:20px">${esc(e.message)}</p>`; }
+  grpTick();
+  const ta = $('#grp-text'), fileBox = $('#grp-file');
+  ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'; };
+  ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !/Mobi|Android/i.test(navigator.userAgent)) { e.preventDefault(); $('#grp-form').requestSubmit(); } };
+  $('#grp-input').onchange = async e => {
+    const fl = e.target.files[0]; e.target.value = ''; if (!fl) return;
+    try {
+      if (fl.type.startsWith('image/') && fl.type !== 'image/gif') Group.file = await compressImage(fl, 1280, .8);
+      else if (fl.type.startsWith('video/') || fl.type === 'image/gif') { if (fl.size > 2.4 * 1024 * 1024) { toast('Vidéo trop lourde (2,4 Mo maximum). Partagez plutôt un lien YouTube ou TikTok.'); return; } Group.file = { name: fl.name, data: await readAsDataURL(fl) }; }
+      else { toast('Photo ou vidéo uniquement.'); return; }
+      $('#grp-file-prev').innerHTML = Group.file.data.startsWith('data:video') ? `${icon('play')} ${esc(fl.name)}` : `<img src="${Group.file.data}" alt="">`;
+      fileBox.hidden = false; ta.focus();
+    } catch { toast('Fichier illisible.'); }
+  };
+  $('#grp-file-x').onclick = () => { Group.file = null; fileBox.hidden = true; };
+  $('#grp-form').onsubmit = async e => {
+    e.preventDefault(); const text = ta.value.trim(); if ((!text && !Group.file) || Group.busy) return;
+    Group.busy = true; const btn = $('#grp-send'); btn.disabled = true; const file = Group.file;
+    try {
+      await Store.call('group', { method: 'POST', body: { text, file } });
+      ta.value = ''; ta.style.height = 'auto'; Group.file = null; fileBox.hidden = true;
+      await grpLoad(false); grpRender(true); Group.lastAct = Date.now(); grpTick();
+    } catch (x) { toast(x.message); } finally { Group.busy = false; btn.disabled = false; ta.focus(); }
+  };
+}
+document.addEventListener('click', async e => {
+  const d = e.target.closest('[data-grp-del]'); if (!d) return;
+  if (!confirm('Supprimer ce message pour tout le monde ?')) return;
+  try { await Store.call('group', { method: 'DELETE', query: '&i=' + d.dataset.grpDel }); await grpLoad(true); grpRender(); } catch (x) { toast(x.message); }
 });
 
 /* Démarrage */

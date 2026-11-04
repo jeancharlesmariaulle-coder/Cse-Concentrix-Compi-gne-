@@ -242,6 +242,19 @@ async function dropTarget(t) {
   await redis('DEL', `cse:soc:${t}`); await redis('HDEL', 'cse:socsum', t);
 }
 
+
+/* ---------- Discussion de groupe (salon commun à tous les membres) ---------- */
+const GROUP_MAX = 500, GROUP_KEEP = 400;
+async function groupMeta() { const v = await redis('GET', 'cse:gmeta'); return v ? JSON.parse(v) : { n: 0, base: 0, v: 0 }; }
+async function saveMedia(f) {
+  const data = String(f && f.data || '');
+  const m = data.match(/^data:((image\/(jpeg|png|webp|gif))|(video\/(mp4|webm|quicktime)));base64,/);
+  if (!m) throw fail(400, 'Fichier non pris en charge (photo ou vidéo uniquement).');
+  if (data.length > MAX_FILE) throw fail(413, 'Fichier trop lourd (2,4 Mo maximum). Pour une vidéo plus longue, partagez plutôt un lien.');
+  const id = newId(); await redis('SET', `cse:file:${id}`, data);
+  return { fileId: id, fileName: clip(f.name || 'fichier'), fileType: data.slice(5, data.indexOf(';')) };
+}
+
 /* ---------- Adhésions : IBAN chiffré (AES-256-GCM) ---------- */
 const ENC_KEY = crypto.createHash('sha256').update('cse-iban:' + SECRET).digest();
 function encrypt(txt) {
@@ -524,6 +537,49 @@ const A = {
     }
     await bumpFeed();
     return { item: p };
+  },
+
+
+  /* Discussion de groupe : tous les membres connectés */
+  async group(req) {
+    if (req.method === 'GET' && req.query.ping) { // vérification légère : jeton signé seulement, 1 seule lecture
+      if (!readToken(req)) throw fail(401, 'Veuillez vous connecter.');
+      const m = await groupMeta(); return { n: m.n, v: m.v || 0 };
+    }
+    const u = await need(req);
+    if (req.method === 'GET') {
+      const m = await groupMeta(); const since = req.query.since !== undefined ? Number(req.query.since) : Math.max(m.base, m.n - 60);
+      if (since >= m.n) return { n: m.n, v: m.v || 0, base: m.base, messages: [] };
+      const from = Math.max(0, since - m.base);
+      const raw = (await redis('LRANGE', 'cse:group', from, -1)) || [];
+      return { n: m.n, v: m.v || 0, base: m.base, messages: raw.map(x => { try { return JSON.parse(x); } catch { return null; } }).filter(Boolean) };
+    }
+    if (req.method === 'DELETE') {
+      const i = Number(req.query.i); const m = await groupMeta();
+      if (!(i >= m.base && i < m.n)) throw fail(404, 'Message introuvable.');
+      const raw = await redis('LINDEX', 'cse:group', i - m.base); const msg = raw && JSON.parse(raw);
+      if (!msg) throw fail(404, 'Message introuvable.');
+      if (msg.uid !== u.id && u.role !== 'elu') throw fail(403, 'Vous ne pouvez supprimer que vos propres messages.');
+      if (msg.fileId) await redis('DEL', `cse:file:${msg.fileId}`);
+      await redis('LSET', 'cse:group', i - m.base, JSON.stringify({ i, uid: msg.uid, by: msg.by, at: msg.at, deleted: true }));
+      m.v = (m.v || 0) + 1; await redis('SET', 'cse:gmeta', JSON.stringify(m));
+      return { ok: true };
+    }
+    const b = body(req); const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
+    if (!text && !(b.file && b.file.data)) throw fail(400, 'Message vide.');
+    await rateLimit(req, 'grp', 120);
+    const msg = { uid: u.id, by: who(u), elu: u.role === 'elu', text, at: new Date().toISOString() };
+    if (b.file && b.file.data) Object.assign(msg, await saveMedia(b.file));
+    const m = await groupMeta(); msg.i = m.n;
+    const len = Number(await redis('RPUSH', 'cse:group', JSON.stringify(msg)));
+    m.n = m.base + len;
+    if (len > GROUP_MAX) { // on garde les GROUP_KEEP derniers messages et on libère les fichiers des plus anciens
+      const old = (await redis('LRANGE', 'cse:group', 0, len - GROUP_KEEP - 1)) || [];
+      for (const x of old) { try { const o = JSON.parse(x); if (o.fileId) await redis('DEL', `cse:file:${o.fileId}`); } catch {} }
+      await redis('LTRIM', 'cse:group', len - GROUP_KEEP, -1); m.base = m.n - GROUP_KEEP;
+    }
+    await redis('SET', 'cse:gmeta', JSON.stringify(m));
+    return { n: m.n, msg };
   },
 
   async adhesion(req) {
