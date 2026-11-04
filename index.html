@@ -984,6 +984,17 @@ body:has(#install-banner:not([hidden])) .chat-fab{bottom:104px}
 
 .hero-text .auth-points{color:#fff}
 .hero-text .auth-points svg{background:#fff;color:#E30613}
+/* Barre du haut aux couleurs du drapeau LGBTQIA+ (dégradé) */
+.site-header{background:linear-gradient(90deg,#E40303 0%,#FF8C00 20%,#FFED00 38%,#008026 58%,#24408E 78%,#732982 100%)!important;box-shadow:none!important}
+.site-header .brand-txt,.site-header .main-nav>a,.site-header .account-btn,.site-header .burger{text-shadow:0 1px 3px rgba(0,0,0,.55)}
+.site-header .main-nav>a{font-weight:800}
+.site-header .account-btn{background:rgba(0,0,0,.28);border-color:rgba(255,255,255,.55)}
+.site-header .burger{background:rgba(0,0,0,.22);border-radius:10px}
+.site-header .main-nav>a.active::after{background:#fff!important;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.pride-bar{display:none}
+@media (display-mode: standalone){.pride-bar{display:block;background:#E40303}}
+.site-header .brand-txt small{color:#fff!important}
+.site-header{background:linear-gradient(rgba(0,0,0,.14),rgba(0,0,0,.14)),linear-gradient(90deg,#E40303 0%,#FF8C00 20%,#FFED00 38%,#008026 58%,#24408E 78%,#732982 100%)!important}
 
 </style>
 </head>
