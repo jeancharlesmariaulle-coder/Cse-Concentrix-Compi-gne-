@@ -847,6 +847,39 @@ body:has(#install-banner:not([hidden])) .chat-fab{bottom:104px}
 @media (max-width:1500px){.tiles{grid-template-columns:repeat(3,1fr)}.tile .ill{aspect-ratio:2.4}}
 @media (max-width:720px){.tiles{grid-template-columns:1fr 1fr}.tile .ill{aspect-ratio:1.62}.tile h3{font-size:15.5px}}
 
+/* Accueil : « Contactez-nous » en dernier, bandeau d'adhésion et affiche réduits de moitié */
+.home-row{grid-template-columns:1.45fr 1fr}
+.home-cta{max-width:1360px;margin:22px auto 0;padding:0 28px}
+.home-cta .cta-card{display:flex;align-items:center;gap:22px;flex-wrap:wrap;padding:22px 26px}
+.home-cta .cta-card h3{max-width:none;margin:0}
+.home-cta .cta-card p{max-width:none;margin:0;flex:1;min-width:180px}
+.home-cta .cta-bubble{position:static;width:54px;height:54px;order:-1}
+@media (max-width:1240px){.home-row{grid-template-columns:1fr 1fr}.home-row .une-panel{grid-column:auto}}
+@media (max-width:720px){.home-row{grid-template-columns:1fr}.home-cta{padding:0 16px}}
+
+.adh-banner-inner{padding:11px 16px;gap:16px;border-radius:16px}
+.adh-logo{width:48px;height:48px;border-radius:10px}
+.adh-text{gap:12px}
+.adh-kicker{font-size:10px;margin:0 0 2px}
+.adh-banner h2{font-size:clamp(16px,1.4vw,20px)}
+.adh-banner h2 br{display:none}
+.adh-banner h2 span{margin-left:8px}
+.adh-sub{display:none}
+.adh-qr-card{padding:7px 10px;gap:10px;border-radius:12px}
+.adh-qr{width:74px;height:74px}
+.adh-qr-side{gap:3px;max-width:none;flex-direction:row;align-items:center;flex-wrap:wrap}
+.adh-qr-side strong{font-size:13px;width:100%}
+.adh-qr-side>span{display:none}
+.adh-qr-side .btn{padding:7px 12px;font-size:11.5px}
+.adh-link{font-size:11px}
+.adh-banner-inner::after{width:110px;height:110px;right:-30px;top:-30px}
+@media (max-width:980px){.adh-banner-inner{flex-direction:row;align-items:center}}
+@media (max-width:720px){.adh-banner{margin-top:10px}.adh-banner-inner{flex-direction:column;align-items:stretch;padding:12px;gap:10px}.adh-logo{width:40px;height:40px}
+  .adh-banner h2 span{display:block;margin:2px 0 0}.adh-qr-card{flex-direction:row;text-align:left}.adh-qr{width:84px;height:84px}.adh-qr-side{align-items:flex-start}.adh-qr-side .btn{width:auto}}
+
+.hero-poster img{max-height:270px!important}
+@media (max-width:720px){.hero-poster img{width:50%!important;max-height:none!important}}
+
 </style>
 </head>
 <body>
@@ -1437,12 +1470,6 @@ const Views = {
             : `<p style="color:var(--ink-2);margin:0">Aucun événement programmé pour le moment.</p>${admin ? `<p><button class="text-link" data-add="events">${icon('plus')}Ajouter un événement</button></p>` : ''}`}
           </div>
         </div>
-        <div class="cta-card">
-          <h3>Une question ? Contactez-nous !</h3>
-          <p>Notre équipe est là pour vous répondre.</p>
-          <a class="btn" href="#/contact">Nous contacter${icon('send')}</a>
-          <div class="cta-bubble" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M32 6c14.4 0 26 10.3 26 23S46.4 52 32 52c-3.5 0-6.8-.6-9.8-1.7L10 56l3.6-10.2C9.5 41.6 6 35.6 6 29 6 16.3 17.6 6 32 6Z"/><circle cx="24" cy="25" r="1.6" fill="#fff"/><circle cx="40" cy="25" r="1.6" fill="#fff"/><path d="M22 33c2.6 4 6 6 10 6s7.4-2 10-6"/></svg></div>
-        </div>
       </section>
       <section class="tiles" aria-label="Accès rapide">
         ${tiles.map(([r, h, p, img, c]) => `<a class="tile ${c}" href="#/${r}">${img ? `<img class="ill" src="${im(img)}" alt="" loading="lazy">` : `<div class="ill ill-comm" aria-hidden="true"><span class="b1">${icon('chat')}</span><span class="b2">${icon('users')}</span><span class="b3">👋</span></div>`}<div class="tbody"><div><h3>${h}</h3><p>${p}</p></div><span class="round-arrow">${icon('arrow')}</span></div></a>`).join('')}
@@ -1452,6 +1479,14 @@ const Views = {
         <div><h3>Vos élu·e·s du CSE</h3><p>28 représentant·e·s à votre écoute, titulaires et suppléant·e·s.</p></div>
         <a class="btn btn-light" href="#/elus">Voir l'équipe${icon('arrow')}</a>
       </div></section>
+      <section class="home-cta">
+        <div class="cta-card">
+          <h3>Une question ? Contactez-nous !</h3>
+          <p>Notre équipe est là pour vous répondre.</p>
+          <a class="btn" href="#/contact">Nous contacter${icon('send')}</a>
+          <div class="cta-bubble" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M32 6c14.4 0 26 10.3 26 23S46.4 52 32 52c-3.5 0-6.8-.6-9.8-1.7L10 56l3.6-10.2C9.5 41.6 6 35.6 6 29 6 16.3 17.6 6 32 6Z"/><circle cx="24" cy="25" r="1.6" fill="#fff"/><circle cx="40" cy="25" r="1.6" fill="#fff"/><path d="M22 33c2.6 4 6 6 10 6s7.4-2 10-6"/></svg></div>
+        </div>
+      </section>
     </div>`;
   },
   afterAccueil() {
