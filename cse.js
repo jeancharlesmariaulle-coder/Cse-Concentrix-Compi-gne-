@@ -636,9 +636,11 @@ const A = {
     await rateLimit(req, 'post', 15);
     const p = { id: newId(), uid: u.id, by: who(u), elu: u.role === 'elu', service: u.id === 'admin' ? '' : (u.service || ''), text, at: new Date().toISOString() };
     const mentions = (await resolveMentions(b.mentions, text, false)).filter(m => m.id !== u.id); if (mentions.length) p.mentions = mentions;
+    const toAll = /(^|\s)@tous(?![\p{L}\d])/iu.test(text) && isEluCse(u); if (toAll) p.all = true;
     if (b.file && b.file.data) Object.assign(p, await saveDataFile(b.file));
     await redis('HSET', 'cse:feed', p.id, JSON.stringify(p));
     if (mentions.length) await notify({ to: mentions.map(m => m.id), pref: 'mention', title: `📣 ${p.by} vous a mentionné·e`, body: `Messagerie : ${text}`, url: '/#/communaute', tag: 'mention' });
+    if (toAll) await notify({ to: 'all', except: u.id, exceptList: mentions.map(m => m.id), pref: 'mention', title: `📢 ${p.by} à tout le monde`, body: `Messagerie : ${text}`, url: '/#/communaute', tag: 'tous' });
     // on garde les FEED_MAX publications les plus récentes
     const n = Number(await redis('HLEN', 'cse:feed'));
     if (n > FEED_MAX) {
@@ -686,6 +688,7 @@ const A = {
     await rateLimit(req, 'grp', 120);
     const msg = { uid: u.id, by: who(u), elu: u.role === 'elu', typ: u.type === 'elu' ? 'elu' : '', text, at: new Date().toISOString() };
     const mentions = (await resolveMentions(b.mentions, text, !!room)).filter(m => m.id !== u.id); if (mentions.length) msg.mentions = mentions;
+    const toAll = /(^|\s)@tous(?![\p{L}\d])/iu.test(text) && (!!room || isEluCse(u)); if (toAll) msg.all = true;
     if (b.file && b.file.data) Object.assign(msg, await saveMedia(b.file));
     const m = await groupMeta(room); msg.i = m.n;
     const len = Number(await redis('RPUSH', LK, JSON.stringify(msg)));
@@ -698,7 +701,8 @@ const A = {
     await redis('SET', MK, JSON.stringify(m));
     if (mentions.length) await notify({ to: mentions.map(m => m.id), pref: 'mention', title: `📣 ${msg.by} vous a mentionné·e`, body: `${room ? '🗳️ Discussion élus' : '👥 Discussion globale'} : ${text}`, url: room ? '/#/communaute/elus' : '/#/communaute/discussion', tag: 'mention' });
     const ml = mentions.map(m => m.id);
-    await notify(room ? { to: 'elus', except: u.id, exceptList: ml, pref: 'elus', title: '🗳️ Discussion élus', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/elus', tag: 'grp-elus' }
+    if (toAll) await notify({ to: room ? 'elus' : 'all', except: u.id, exceptList: ml, pref: 'mention', title: `📢 ${msg.by} à tout le monde`, body: `${room ? '🗳️ Discussion élus' : '👥 Discussion globale'} : ${text}`, url: room ? '/#/communaute/elus' : '/#/communaute/discussion', tag: 'tous' });
+    else await notify(room ? { to: 'elus', except: u.id, exceptList: ml, pref: 'elus', title: '🗳️ Discussion élus', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/elus', tag: 'grp-elus' }
       : { to: 'all', except: u.id, exceptList: ml, pref: 'global', title: '👥 Discussion globale', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/discussion', tag: 'grp' });
     return { n: m.n, msg };
   },

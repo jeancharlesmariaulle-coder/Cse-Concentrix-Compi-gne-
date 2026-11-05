@@ -1219,6 +1219,15 @@ body:has(#install-banner:not([hidden])) .notif-banner{bottom:100px}
 .for-you{display:inline-block;background:#FFD200;color:#0E1A33;font-size:11px;font-weight:900;border-radius:999px;padding:2px 8px;margin:0 0 4px}
 .post.mentioned{box-shadow:0 0 0 3px #FFD200,var(--shadow)}
 .post .for-you{margin:0 0 8px}
+.mp-ico{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#FFD200;font-size:15px}
+.mp-name small{display:block;font-weight:600;font-size:12px;color:var(--ink-2)}
+.mention.all{background:#FFD200;color:#0E1A33}
+.for-you.all{background:linear-gradient(120deg,#E30613,#E6007E);color:#fff}
+.grp-msg.mine .mention.all{background:#FFD200;color:#0E1A33}
+.mp-sub{display:block;font-size:12px;font-weight:500;color:var(--ink-2)}
+.mp-all{background:linear-gradient(120deg,#FFF3C4,#fff)}
+.mp-all .mp-name small{display:block;font-weight:600;font-size:12px;color:var(--ink-2)}
+.mp-all .mp-ico{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#FFD200;font-size:15px}
 
 </style>
 </head>
@@ -2980,11 +2989,11 @@ const Feed = { items: [], v: -1, timer: null, lastAct: 0, photo: null };
 function postHtml(p) {
   const me = Store.user || {}; const canDel = p.uid === me.id || me.role === 'elu';
   const img = p.fileId ? Store.link(p.fileId, p.fileName) : '';
-  return `<article class="post ${mentionsMe(p) ? 'mentioned' : ''}" data-post="${esc(p.id)}">${mentionsMe(p) ? '<span class="for-you">📣 Vous êtes mentionné·e</span>' : ''}
+  return `<article class="post ${mentionsMe(p) || p.all && p.uid !== (Store.user || {}).id ? 'mentioned' : ''}" data-post="${esc(p.id)}">${mentionsMe(p) ? '<span class="for-you">📣 Vous êtes mentionné·e</span>' : p.all ? '<span class="for-you all">📢 Pour tout le monde</span>' : ''}
     <header><span class="avatar initials sm ${p.elu ? 'elu' : ''}">${esc(initialsOf(p.by))}</span>
       <div><strong>${esc(p.by)}</strong>${p.elu ? ' <span class="badge-cgt">Responsable CGT</span>' : ''}<small>${[p.service, timeAgo(p.at)].filter(Boolean).map(esc).join(' · ')}</small></div>
       ${canDel ? `<button type="button" class="icon-btn" data-post-del="${esc(p.id)}" aria-label="Supprimer la publication" title="Supprimer">${icon('trash')}</button>` : ''}</header>
-    ${p.text ? hlMentions(longText(p.text, { chars: 420, lines: 8, cls: 'post-text' }), p.mentions) : ''}
+    ${p.text ? hlMentions(longText(p.text, { chars: 420, lines: 8, cls: 'post-text' }), p.mentions, p.all) : ''}
     ${img ? `<a class="post-img" href="${img}" target="_blank" rel="noopener"><img src="${img}" alt="" loading="lazy"></a>` : ''}
     ${socialBar('feed:' + p.id, { comments: true })}
   </article>`;
@@ -3129,11 +3138,11 @@ function grpMsgHtml(m, prev) {
   const media = m.fileId ? (/^video\//.test(m.fileType) ? `<video src="${Store.link(m.fileId, m.fileName)}" controls playsinline preload="metadata"></video>`
     : `<a href="${Store.link(m.fileId, m.fileName)}" target="_blank" rel="noopener"><img src="${Store.link(m.fileId, m.fileName)}" alt="" loading="lazy"></a>`) : '';
   const canDel = mine || me.role === 'elu';
-  return sep + `<div class="grp-msg ${mine ? 'mine' : ''} ${sameAuthor && !newDay && !mentionsMe(m) ? 'cont' : ''} ${mentionsMe(m) ? 'mentioned' : ''}" data-i="${m.i}">
+  return sep + `<div class="grp-msg ${mine ? 'mine' : ''} ${sameAuthor && !newDay && !mentionsMe(m) ? 'cont' : ''} ${mentionsMe(m) || m.all && m.uid !== (Store.user || {}).id ? 'mentioned' : ''}" data-i="${m.i}">
     ${mine ? '' : `<span class="avatar initials xs ${m.elu ? 'elu' : ''}">${esc(initialsOf(m.by))}</span>`}
     <div class="grp-col">
       ${mine || (sameAuthor && !newDay) ? '' : `<div class="grp-name">${esc(m.by)}${m.typ === 'elu' ? ' <span class="badge-elu">🗳️ Élu·e</span>' : ''}${m.elu ? ' <span class="badge-cgt">CGT</span>' : ''}</div>`}
-      <div class="grp-bubble ${media && !m.text ? 'media-only' : ''}">${mentionsMe(m) ? '<span class="for-you">📣 Pour vous</span>' : ''}${media}${m.text ? `<p>${hlMentions(linkify(m.text), m.mentions)}</p>` : ''}
+      <div class="grp-bubble ${media && !m.text ? 'media-only' : ''}">${mentionsMe(m) ? '<span class="for-you">📣 Pour vous</span>' : m.all ? '<span class="for-you all">📢 Pour tout le monde</span>' : ''}${media}${m.text ? `<p>${hlMentions(linkify(m.text), m.mentions, m.all)}</p>` : ''}
         <span class="grp-time">${new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span></div>
       ${canDel ? `<button type="button" class="grp-del" data-grp-del="${m.i}" aria-label="Supprimer ce message">Supprimer</button>` : ''}
     </div></div>`;
@@ -3578,7 +3587,8 @@ function mentionSearch(q, onlyElus) {
 }
 function mentionIds(ta, text) { return [...(ta._mentions || new Map())].filter(([name]) => text.includes('@' + name)).map(([, id]) => id); }
 const mentionsMe = m => !!(m && m.mentions && Store.user && m.mentions.some(x => x.id === Store.user.id));
-function hlMentions(html, mentions) {
+function hlMentions(html, mentions, all) {
+  if (all) html = html.replace(/(^|\s|>)@tous(?![\p{L}\d])/giu, '$1<span class="mention all">@tous</span>');
   for (const m of mentions || []) { const t = esc('@' + m.name); html = html.split(t).join(`<span class="mention ${Store.user && m.id === Store.user.id ? 'me' : ''}">${t}</span>`); }
   return html;
 }
@@ -3590,16 +3600,17 @@ function mentionAttach(ta, onlyElus) {
   const close = () => { pop.hidden = true; res = []; start = -1; };
   const query = () => { const before = ta.value.slice(0, ta.selectionStart); const m = /(^|\s)@([^\s@]{0,24}(?: [^\s@]{0,24})?)$/u.exec(before); return m ? { q: m[2], at: before.length - m[2].length - 1 } : null; };
   const draw = () => {
-    pop.innerHTML = res.length ? `<p class="mp-head">Citer une personne${onlyElus ? ' (élu·e·s)' : ''}</p>` + res.map((m, i) => `<button type="button" role="option" class="mp-item ${i === sel ? 'on' : ''}" data-mi="${i}">
+    pop.innerHTML = res.length ? `<p class="mp-head">Citer une personne${onlyElus ? ' (élu·e·s)' : ''}</p>` + res.map((m, i) => m.all ? `<button type="button" role="option" class="mp-item mp-all ${i === sel ? 'on' : ''}" data-mi="${i}"><span class="mp-ico">📢</span><span class="mp-name">@tous<small>${onlyElus ? 'Prévenir tous les élu·e·s' : 'Prévenir tout le monde'}</small></span></button>` : `<button type="button" role="option" class="mp-item ${i === sel ? 'on' : ''}" data-mi="${i}">
       <span class="avatar initials xs ${m.elu ? 'elu' : ''}">${esc(initialsOf(mName(m)))}</span><span class="mp-name">${esc(mName(m))}</span>${m.elu ? '<span class="badge-elu">🗳️ Élu·e</span>' : ''}</button>`).join('')
       : `<p class="mp-empty">Personne ne correspond. Vérifiez l'orthographe.</p>`;
     pop.hidden = false;
   };
-  const update = async () => { const q = query(); if (!q) return close(); start = q.at; await membersLoad(); res = mentionSearch(q.q, onlyElus); sel = 0; if (!res.length && q.q.length < 2) return close(); draw(); };
+  const update = async () => { const q = query(); if (!q) return close(); start = q.at; await membersLoad(); res = mentionSearch(q.q, onlyElus);
+    if ((onlyElus || isEluCse(Store.user)) && 'tous'.startsWith(fold(q.q).trim())) res.unshift({ id: '@tous', all: true }); sel = 0; if (!res.length && q.q.length < 2) return close(); draw(); };
   const pick = i => {
-    const m = res[i]; if (!m) return; const name = mName(m); const caret = ta.selectionStart;
+    const m = res[i]; if (!m) return; const name = m.all ? 'tous' : mName(m); const caret = ta.selectionStart;
     ta.value = ta.value.slice(0, start) + '@' + name + ' ' + ta.value.slice(caret); const pos = start + name.length + 2;
-    ta._mentions.set(name, m.id); close(); ta.focus(); ta.setSelectionRange(pos, pos); ta.dispatchEvent(new Event('input'));
+    if (!m.all) ta._mentions.set(name, m.id); close(); ta.focus(); ta.setSelectionRange(pos, pos); ta.dispatchEvent(new Event('input'));
   };
   ta.addEventListener('input', update); ta.addEventListener('click', update); ta.addEventListener('blur', () => setTimeout(close, 200));
   host.addEventListener('keydown', e => {
