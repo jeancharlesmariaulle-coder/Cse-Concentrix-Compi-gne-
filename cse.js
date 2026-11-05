@@ -769,14 +769,15 @@ const A = {
       return { ok: true };
     }
     const b = body(req); const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
-    const wink = !fileGiven(b.file) && WINKS[b.wink] ? String(b.wink) : '';
-    if (!text && !fileGiven(b.file) && !wink) throw fail(400, 'Message vide.');
+    const wink = !fileGiven(b.file) && WINKS[b.wink] ? String(b.wink) : ''; const wizz = !fileGiven(b.file) && !wink && !!b.wizz;
+    if (!text && !fileGiven(b.file) && !wink && !wizz) throw fail(400, 'Message vide.');
     await rateLimit(req, 'grp', 120);
     if (wink && !(await redis('SET', `cse:wink:${u.id}`, '1', 'NX', 'EX', 5))) throw fail(429, 'Un clin d’œil toutes les 5 secondes maximum 😉');
+    if (wizz && !(await redis('SET', `cse:gwizz:${u.id}`, '1', 'NX', 'EX', 30))) throw fail(429, 'Un Wizz toutes les 30 secondes maximum dans les discussions 😉');
     const msg = { uid: u.id, by: who(u), elu: u.role === 'elu', typ: u.type === 'elu' ? 'elu' : '', text, at: new Date().toISOString() };
     const mentions = (await resolveMentions(b.mentions, text, !!room)).filter(m => m.id !== u.id); if (mentions.length) msg.mentions = mentions;
     const toAll = /(^|\s)@tous(?![\p{L}\d])/iu.test(text) && (!!room || isEluCse(u)); if (toAll) msg.all = true;
-    if (fileGiven(b.file)) Object.assign(msg, await saveMedia(b.file)); else if (wink) msg.wink = wink;
+    if (fileGiven(b.file)) Object.assign(msg, await saveMedia(b.file)); else if (wink) msg.wink = wink; else if (wizz) msg.wizz = 1;
     const m = await groupMeta(room); msg.i = m.n;
     const len = Number(await redis('RPUSH', LK, JSON.stringify(msg)));
     m.n = m.base + len;
@@ -786,14 +787,14 @@ const A = {
       await redis('LTRIM', LK, len - GROUP_KEEP, -1); m.base = m.n - GROUP_KEEP;
     }
     await redis('SET', MK, JSON.stringify(m));
-    if (!text && !wink && len > 1) { // photos envoyées en série : une seule notification (celle du 1er message)
+    if (!text && !wink && !wizz && len > 1) { // photos envoyées en série : une seule notification (celle du 1er message)
       try { const prev = JSON.parse(await redis('LINDEX', LK, len - 2)); if (prev && prev.uid === u.id && Date.now() - Date.parse(prev.at) < 60e3) return { n: m.n, msg }; } catch {}
     }
     if (mentions.length) await notify({ to: mentions.map(m => m.id), pref: 'mention', title: `📣 ${msg.by} vous a mentionné·e`, body: `${room ? '🗳️ Discussion élus' : '👥 Discussion globale'} : ${text}`, url: room ? '/#/communaute/elus' : '/#/communaute/discussion', tag: 'mention' });
     const ml = mentions.map(m => m.id);
     if (toAll) await notify({ to: room ? 'elus' : 'all', except: u.id, exceptList: ml, pref: 'mention', title: `📢 ${msg.by} à tout le monde`, body: `${room ? '🗳️ Discussion élus' : '👥 Discussion globale'} : ${text}`, url: room ? '/#/communaute/elus' : '/#/communaute/discussion', tag: 'tous' });
-    else await notify(room ? { to: 'elus', except: u.id, exceptList: ml, pref: 'elus', title: '🗳️ Discussion élus', body: `${msg.by} : ${text || (msg.wink ? '✨ Clin d’œil : ' + WINKS[msg.wink] : /^Message vocal/.test(msg.fileName || '') ? '🎤 Message vocal' : '📷 Photo / vidéo')}`, url: '/#/communaute/elus', tag: 'grp-elus' }
-      : { to: 'all', except: u.id, exceptList: ml, pref: 'global', title: '👥 Discussion globale', body: `${msg.by} : ${text || (msg.wink ? '✨ Clin d’œil : ' + WINKS[msg.wink] : /^Message vocal/.test(msg.fileName || '') ? '🎤 Message vocal' : '📷 Photo / vidéo')}`, url: '/#/communaute/discussion', tag: 'grp' });
+    else await notify(room ? { to: 'elus', except: u.id, exceptList: ml, pref: 'elus', title: '🗳️ Discussion élus', body: `${msg.by} : ${text || (msg.wizz ? '📳 Wizz !' : msg.wink ? '✨ Clin d’œil : ' + WINKS[msg.wink] : /^Message vocal/.test(msg.fileName || '') ? '🎤 Message vocal' : '📷 Photo / vidéo')}`, url: '/#/communaute/elus', tag: 'grp-elus' }
+      : { to: 'all', except: u.id, exceptList: ml, pref: 'global', title: '👥 Discussion globale', body: `${msg.by} : ${text || (msg.wizz ? '📳 Wizz !' : msg.wink ? '✨ Clin d’œil : ' + WINKS[msg.wink] : /^Message vocal/.test(msg.fileName || '') ? '🎤 Message vocal' : '📷 Photo / vidéo')}`, url: '/#/communaute/discussion', tag: 'grp' });
     return { n: m.n, msg };
   },
 

@@ -1496,6 +1496,20 @@ body:has(#install-banner:not([hidden])) .notif-banner{bottom:100px}
 @keyframes wkWave{from{transform:rotate(-18deg)}to{transform:rotate(22deg)}}
 @media (prefers-reduced-motion:reduce){.rx svg *,.wk-mini,.wk-stage *{animation-duration:.01s!important;animation-iteration-count:1!important}}
 .emo-grid>.wk-head,.emo-grid>.wk-grid{grid-column:1/-1}
+/* ===== Wizz renforcé ===== */
+@keyframes wizzBig{0%,100%{transform:translate(0,0) rotate(0)}8%{transform:translate(-14px,6px) rotate(-1deg)}16%{transform:translate(13px,-8px) rotate(1deg)}24%{transform:translate(-12px,-6px)}32%{transform:translate(14px,7px) rotate(-1deg)}40%{transform:translate(-11px,5px)}48%{transform:translate(10px,-6px) rotate(1deg)}56%{transform:translate(-9px,4px)}64%{transform:translate(8px,-4px)}72%{transform:translate(-6px,3px)}80%{transform:translate(4px,-2px)}90%{transform:translate(-2px,1px)}}
+body.wizzing,#chat-panel.wizzing{animation:wizzBig .95s cubic-bezier(.36,.07,.19,.97)}
+.wizz-flash{position:fixed;inset:0;z-index:10000;pointer-events:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:radial-gradient(circle,rgba(255,0,110,.18),transparent 70%);animation:wfOut 1.5s ease-in forwards}
+.wizz-flash .wf-ico{width:120px;height:120px;animation:wfIco .12s linear infinite alternate}
+.wizz-flash .wf-ico svg{width:100%;height:100%;overflow:visible}
+.wizz-flash .wf-txt{font:900 54px/1 "Arial Black",Arial,sans-serif;color:#FFD200;-webkit-text-stroke:3px #B0004F;text-shadow:0 5px 0 #E30613,0 10px 18px rgba(0,0,0,.35);animation:wkTxt .4s cubic-bezier(.2,1.6,.4,1) both,wfIco .1s linear .4s infinite alternate}
+@keyframes wfIco{from{transform:rotate(-8deg) translateX(-3px)}to{transform:rotate(8deg) translateX(3px)}}
+@keyframes wfOut{0%,75%{opacity:1}100%{opacity:0}}
+.rx-buzz{animation:wfIco .15s linear infinite alternate}
+.wk-card.wk-wizz{background:linear-gradient(135deg,#E30613,#E6007E);border-color:#B0004F}
+.wk-card.wk-wizz small{color:#fff;font-weight:900}
+.grp-bubble .wizz-line{font-weight:900;letter-spacing:.02em}
+@media (prefers-reduced-motion:reduce){body.wizzing,#chat-panel.wizzing{animation:none}}
 
 </style>
 </head>
@@ -3492,7 +3506,7 @@ function grpMsgHtml(m, prev) {
     ${mine ? '' : `<span class="avatar initials xs ${m.elu ? 'elu' : ''}">${esc(initialsOf(m.by))}</span>`}
     <div class="grp-col">
       ${mine || (sameAuthor && !newDay) ? '' : `<div class="grp-name">${esc(m.by)}${m.typ === 'elu' ? ' <span class="badge-elu">🗳️ Élu·e</span>' : ''}${m.elu ? ' <span class="badge-cgt">CGT</span>' : ''}</div>`}
-      <div class="grp-bubble ${media && !m.text ? 'media-only' : ''}${m.wink ? ' wink-b' : ''}${!media && onlyEmo(m.text) ? ' big-emo' : ''}">${mentionsMe(m) ? '<span class="for-you">📣 Pour vous</span>' : m.all ? '<span class="for-you all">📢 Pour tout le monde</span>' : ''}${media}${m.wink ? winkChip(m.wink, mine) : ''}${m.text ? `<p>${hlMentions(linkify(m.text), m.mentions, m.all)}</p>` : ''}
+      <div class="grp-bubble ${media && !m.text ? 'media-only' : ''}${m.wink ? ' wink-b' : ''}${!media && onlyEmo(m.text) ? ' big-emo' : ''}">${mentionsMe(m) ? '<span class="for-you">📣 Pour vous</span>' : m.all ? '<span class="for-you all">📢 Pour tout le monde</span>' : ''}${media}${m.wink ? winkChip(m.wink, mine) : ''}${m.wizz ? `<p class="wizz-line">📳 ${mine ? 'Vous avez envoyé un Wizz !' : 'Wizz !'}</p>` : ''}${m.text ? `<p>${hlMentions(linkify(m.text), m.mentions, m.all)}</p>` : ''}
         <span class="grp-time">${new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}${m.edited ? ' <em class="edited">· modifié</em>' : ''}</span></div>
       ${mine || canDel ? `<div class="grp-acts">${mine && m.text ? `<button type="button" class="grp-del" data-grp-edit="${m.i}">Modifier</button>` : ''}${canDel ? `<button type="button" class="grp-del" data-grp-del="${m.i}" aria-label="Supprimer ce message">Supprimer</button>` : ''}</div>` : ''}
     </div></div>`;
@@ -3523,8 +3537,8 @@ function grpTick() {
     if (document.visibilityState === 'visible' && isGrpRoute(r2) && (r2.id === 'elus' ? 'elus' : '') === room && Group.room === room) {
       try {
         const p = await Store.call('group', { query: '&ping=1' + grpQ(room) });
-        if (p.v !== Group.v) { const top = Group.msgs.length ? Group.msgs[Group.msgs.length - 1].i : -1; await grpLoad(true); const others = Group.msgs.filter(m => m.i > top && !m.deleted && m.uid !== (Store.user || {}).id), wk = others.filter(m => m.wink).pop(); if (top >= 0) { if (wk) playWink(wk.wink); else if (others.length) retroSound('grp'); } grpRender(); }
-        else if (p.n !== Group.n) { const got = await grpLoad(false); if (got) { const others = Group.msgs.slice(-got).filter(m => m.uid !== (Store.user || {}).id), wk = others.filter(m => m.wink).pop(); if (wk) playWink(wk.wink); else if (others.length) retroSound('grp'); grpRender(); Group.lastAct = Math.max(Group.lastAct, Date.now() - 30e3); } }
+        if (p.v !== Group.v) { const top = Group.msgs.length ? Group.msgs[Group.msgs.length - 1].i : -1; await grpLoad(true); const others = Group.msgs.filter(m => m.i > top && !m.deleted && m.uid !== (Store.user || {}).id), wk = others.filter(m => m.wink).pop(); if (top >= 0) { if (others.some(m => m.wizz)) retroWizz(); else if (wk) playWink(wk.wink); else if (others.length) retroSound('grp'); } grpRender(); }
+        else if (p.n !== Group.n) { const got = await grpLoad(false); if (got) { const others = Group.msgs.slice(-got).filter(m => m.uid !== (Store.user || {}).id), wk = others.filter(m => m.wink).pop(); if (others.some(m => m.wizz)) retroWizz(); else if (wk) playWink(wk.wink); else if (others.length) retroSound('grp'); grpRender(); Group.lastAct = Math.max(Group.lastAct, Date.now() - 30e3); } }
       } catch {}
     }
     grpTick();
@@ -4317,17 +4331,26 @@ function tone(c, f, t0, d, type = 'sine', v = .18, f2) {
 }
 function retroSound(kind) {
   if (!soundOn() || document.visibilityState !== 'visible') return; const c = actx(); if (!c) return;
-  if (kind === 'wizz') { for (let k = 0; k < 6; k++) tone(c, k % 2 ? 140 : 110, k * .07, .09, 'square', .12); tone(c, 880, .45, .25, 'triangle', .14, 440); }
+  if (kind === 'wizz') { // vrombissement de téléphone qui vibre sur la table + petit « tadaa » (sons créés pour le portail)
+    for (let k = 0; k < 14; k++) { tone(c, k % 2 ? 92 : 74, k * .055, .07, 'sawtooth', .16); tone(c, k % 2 ? 184 : 148, k * .055, .05, 'square', .05); }
+    noise(c, 0, .8, .06, 2500); tone(c, 660, .82, .12, 'triangle', .14); tone(c, 990, .92, .3, 'triangle', .14, 1320); }
   else if (kind === 'grp') { tone(c, 988, 0, .18, 'sine', .14); tone(c, 1319, .1, .28, 'sine', .12); }
   else { tone(c, 784, 0, .16, 'triangle', .16); tone(c, 1175, .12, .3, 'triangle', .14); tone(c, 1568, .24, .35, 'sine', .08); } // « ding-dong » d'arrivée
 }
 function retroWizz() {
-  retroSound('wizz'); try { navigator.vibrate && navigator.vibrate([90, 50, 90, 50, 160]); } catch {}
-  const el = $('#chat-panel') || document.body; el.classList.remove('wizzing'); void el.offsetWidth; el.classList.add('wizzing'); setTimeout(() => el.classList.remove('wizzing'), 900);
+  retroSound('wizz'); try { navigator.vibrate && navigator.vibrate([120, 40, 120, 40, 120, 40, 300]); } catch {}
+  const els = [document.body, $('#chat-panel')].filter(Boolean);
+  els.forEach(el => { el.classList.remove('wizzing'); void el.offsetWidth; el.classList.add('wizzing'); setTimeout(() => el.classList.remove('wizzing'), 1000); });
+  document.querySelector('.wizz-flash')?.remove();
+  const f = document.createElement('div'); f.className = 'wizz-flash'; f.setAttribute('aria-hidden', 'true');
+  f.innerHTML = `<div class="wf-ico">${WK_SVG.phone}</div><div class="wf-txt">WIZZ !</div>`; document.documentElement.appendChild(f); setTimeout(() => f.remove(), 1500);
 }
-async function sendWizz() {
-  try { const body = { text: '', wizz: true }; if (Chat.mode === 'thread') body.to = Chat.uid; const r = await Store.call('chat', { method: 'POST', query: '&op=send', body }); chatAdd([r.msg]); Chat.n = Math.max(Chat.n, r.n); retroWizz(); }
-  catch (x) { toast(x.message); }
+async function sendWizz(target = 'chat') {
+  try {
+    if (target === 'chat') { const body = { text: '', wizz: true }; if (Chat.mode === 'thread') body.to = Chat.uid; const r = await Store.call('chat', { method: 'POST', query: '&op=send', body }); chatAdd([r.msg]); Chat.n = Math.max(Chat.n, r.n); }
+    else { await Store.call('group', { method: 'POST', query: grpQ(), body: { text: '', wizz: true } }); await grpLoad(false); grpRender(true); Group.lastAct = Date.now(); grpTick(); }
+    retroWizz();
+  } catch (x) { toast(x.message); }
 }
 /* Panneau d'émoticônes (+ GIF, + Wizz dans la messagerie privée) */
 function emoPanel(target, btn) {
@@ -4336,13 +4359,13 @@ function emoPanel(target, btn) {
   const ta = form.querySelector('textarea');
   form.insertAdjacentHTML('beforeend', `<div class="emo-pop" role="dialog" aria-label="Émoticônes">
     <div class="emo-tabs"><button type="button" class="emo-tab emo-wk on" data-emo-tab="wk" title="Clins d’œil animés">✨</button>${EMO_CATS.map(([i, l], k) => `<button type="button" class="emo-tab" data-emo-tab="${k}" title="${l}">${i}</button>`).join('')}
-      <button type="button" class="emo-tab emo-gif" data-gif-pick="${target}" title="GIF">GIF</button>${target === 'chat' ? '<button type="button" class="emo-tab emo-wizz" data-wizz title="Envoyer un Wizz">📳 Wizz</button>' : ''}</div>
+      <button type="button" class="emo-tab emo-gif" data-gif-pick="${target}" title="GIF">GIF</button><button type="button" class="emo-tab emo-wizz" data-wizz title="Envoyer un Wizz">📳 Wizz</button></div>
     <div class="emo-grid" id="emo-grid-${target}"></div>
     <div class="emo-foot"><label class="emo-sound"><input type="checkbox" data-sound ${soundOn() ? 'checked' : ''}> 🔊 Sons</label><small>Astuce : tapez :) ;) :D (Y) (L)… comme avant !</small></div></div>`);
   pop = form.querySelector('.emo-pop');
   const draw = k => {
     const g = pop.querySelector('.emo-grid'); pop.querySelectorAll('.emo-tab[data-emo-tab]').forEach(b => b.classList.toggle('on', b.dataset.emoTab == String(k)));
-    if (k === 'wk') g.innerHTML = `<p class="wk-head">✨ <strong>Clins d’œil animés</strong> · touchez pour l’envoyer : il se joue en grand, avec le son, chez tout le monde !</p><div class="wk-grid">${WINKS.map(w => `<button type="button" class="wk-card" data-wink-send="${w.id}"><span class="wk-mini">${wkIco(w.ico)}</span><small>${esc(w.label)}</small></button>`).join('')}</div>`;
+    if (k === 'wk') g.innerHTML = `<p class="wk-head">✨ <strong>Clins d’œil animés</strong> · touchez pour l’envoyer : il se joue en grand, avec le son, chez tout le monde !</p><div class="wk-grid"><button type="button" class="wk-card wk-wizz" data-wizz><span class="wk-mini">${WK_SVG.phone}</span><small>Wizz !</small></button>${WINKS.map(w => `<button type="button" class="wk-card" data-wink-send="${w.id}"><span class="wk-mini">${wkIco(w.ico)}</span><small>${esc(w.label)}</small></button>`).join('')}</div>`;
     else if (EMO_CATS[k][1] === 'Codes rétro') g.innerHTML = `<div class="emo-codes">${EMO_CODES.filter(([c], i, a) => a.findIndex(x => x[1] === EMO_CODES[i][1]) === i).map(([c, e]) => `<button type="button" class="emo-code" data-emo-ins="${e}"><span>${rxHtml(e)}</span><code>${esc(c)}</code></button>`).join('')}</div>`;
     else g.innerHTML = EMO_CATS[k][2].split(' ').map(e => `<button type="button" class="emo-i${rxKey(e) ? ' anim' : ''}" data-emo-ins="${e}">${rxHtml(e)}</button>`).join('');
   };
@@ -4351,7 +4374,7 @@ function emoPanel(target, btn) {
     const t = e.target.closest('[data-emo-tab]'); if (t) { draw(t.dataset.emoTab === 'wk' ? 'wk' : Number(t.dataset.emoTab)); return; }
     const wk = e.target.closest('[data-wink-send]'); if (wk) { pop.remove(); sendWink(target, wk.dataset.winkSend); return; }
     const i = e.target.closest('[data-emo-ins]'); if (i && ta) { const p = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, p) + i.dataset.emoIns + ta.value.slice(ta.selectionEnd ?? p); ta.focus(); const np = p + i.dataset.emoIns.length; ta.setSelectionRange(np, np); ta.dispatchEvent(new Event('input')); if (soundOn()) { const c = actx(); c && tone(c, 1200, 0, .06, 'sine', .08, 1700); } return; }
-    if (e.target.closest('[data-wizz]')) { pop.remove(); sendWizz(); return; }
+    if (e.target.closest('[data-wizz]')) { pop.remove(); sendWizz(target); return; }
     if (e.target.closest('[data-gif-pick]')) pop.remove();
   });
   pop.querySelector('[data-sound]').onchange = e => { ls.set('cse-sound', e.target.checked ? 1 : 0); if (e.target.checked) retroSound('msg'); };
@@ -4418,6 +4441,7 @@ const WK_SVG = {
   mega: `<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 12h5l13-7v22l-13-7H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z" fill="#E30613" stroke="#7A0010" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 20l2 7h3l-1.6-6" fill="#7A0010"/><path class="rx-pulse" d="M26 11q3 5 0 10M28.4 8.4q5 7.6 0 15.2" fill="none" stroke="#FFD200" stroke-width="2" stroke-linecap="round"/></svg>`,
   cloud: `<svg viewBox="0 0 64 40" aria-hidden="true"><path d="M16 36a12 12 0 0 1-1.6-23.9A16 16 0 0 1 45 9.6 11 11 0 1 1 50 36z" fill="#B0BEC5" stroke="#546E7A" stroke-width="2"/></svg>`,
   flag: `<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 3v27" stroke="#5D4037" stroke-width="2.4" stroke-linecap="round"/><path class="rx-sway" d="M8 4q6-3 11 0t11 0v12q-6 3-11 0t-11 0z" fill="#E30613" stroke="#7A0010" stroke-width="1.2"/><text x="19" y="13.6" font-size="6" font-weight="900" fill="#fff" text-anchor="middle" font-family="Arial">CGT</text></svg>`,
+  phone: `<svg viewBox="0 0 32 32" aria-hidden="true"><g class="rx-buzz"><rect x="10" y="3" width="12" height="26" rx="2.6" fill="#2B2B3A" stroke="#111" stroke-width="1.2"/><rect x="11.6" y="6" width="8.8" height="17" rx="1" fill="#7FD3FF"/><text x="16" y="17.4" font-size="5.6" font-weight="900" fill="#E30613" text-anchor="middle" font-family="Arial">W!</text><circle cx="16" cy="26" r="1.2" fill="#666"/></g><path class="rx-pulse" d="M6 10q-2.4 6 0 12M26 10q2.4 6 0 12M3 7q-4 9 0 18M29 7q4 9 0 18" fill="none" stroke="#E6007E" stroke-width="1.8" stroke-linecap="round"/></svg>`,
   zz: `<svg viewBox="0 0 32 32" aria-hidden="true"><text x="16" y="24" font-size="22" font-weight="900" fill="#7B9CFF" stroke="#2A3F8F" stroke-width="1" text-anchor="middle" font-family="Arial">Z</text></svg>`
 };
 const wkIco = k => RX[k] || WK_SVG[k] || '';
