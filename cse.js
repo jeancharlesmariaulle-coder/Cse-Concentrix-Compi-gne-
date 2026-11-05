@@ -652,6 +652,33 @@ const A = {
       if (u.role !== 'elu' && !(it.uid === u.id && it.status === 'nouvelle')) throw fail(403, 'Cette commande ne peut plus être annulée en ligne. Contactez le CSE.');
       await redis('HDEL', 'cse:billets', it.id); return { ok: true };
     }
+    // Changement de date : le CSE ou le salarié propose une date, l'autre accepte (ou repropose)
+    if (req.method === 'POST' && ['propose', 'accept'].includes(body(req).action)) {
+      const it = await getIt(); const b = body(req); const elu = u.role === 'elu';
+      if (!elu && it.uid !== u.id) throw fail(403, 'Commande introuvable.');
+      const side = elu ? 'cse' : 'salarie'; const fd = d => d.split('-').reverse().join('/');
+      it.dates = it.dates || [];
+      if (b.action === 'propose') {
+        const date = String(b.date || '');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw fail(400, 'Choisissez une date.');
+        const msg = clip(b.msg, 'message').slice(0, 500);
+        it.proposal = { date, msg, by: side, at: new Date().toISOString() };
+        it.dates.push({ type: 'propose', by: side, date, msg, at: it.proposal.at });
+        await redis('HSET', 'cse:billets', it.id, JSON.stringify(it));
+        const txt = `📅 Commande ${it.num} : ${side === 'cse' ? 'le CSE vous propose' : 'je propose'} le ${fd(date)} comme date${msg ? ` — « ${msg} »` : ''}.${side === 'cse' ? ' Répondez dans Avantages → Mes commandes.' : ''}`;
+        if (it.uid !== 'admin') try { side === 'cse' ? await chatPush(it.uid, { from: 'cgt', by: u.id === 'admin' ? 'Section CGT' : `${u.prenom} · CGT`, text: txt })
+          : await chatPush(it.uid, { from: 'user', by: `${u.prenom} ${u.nom}`, text: txt }, { name: `${u.prenom} ${u.nom}`, email: u.email, service: u.service || '' }); } catch {}
+        return { ok: true, item: it };
+      }
+      if (!it.proposal) throw fail(400, 'Aucune date à accepter.');
+      if (it.proposal.by === side) throw fail(400, "C'est à l'autre partie d'accepter cette date.");
+      it.date_visite = it.proposal.date; it.dates.push({ type: 'accept', by: side, date: it.proposal.date, at: new Date().toISOString() }); it.proposal = null;
+      await redis('HSET', 'cse:billets', it.id, JSON.stringify(it));
+      const txt = `✅ Commande ${it.num} : date du ${fd(it.date_visite)} acceptée${side === 'cse' ? ' par le CSE' : ''}.`;
+      if (it.uid !== 'admin') try { side === 'cse' ? await chatPush(it.uid, { from: 'cgt', by: 'Section CGT', text: txt })
+        : await chatPush(it.uid, { from: 'user', by: `${u.prenom} ${u.nom}`, text: txt }, { name: `${u.prenom} ${u.nom}`, email: u.email, service: u.service || '' }); } catch {}
+      return { ok: true, item: it };
+    }
     if (u.role !== 'elu') throw fail(403, 'Réservé aux élu·e·s.');
     if (req.method === 'GET') return { items: await all() };
     const it = await getIt(); const st = String(body(req).status || '');

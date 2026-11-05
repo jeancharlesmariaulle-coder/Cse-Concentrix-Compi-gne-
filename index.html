@@ -1156,6 +1156,22 @@ body:has(.bil-bar:not([hidden])) #app{padding-bottom:90px}
 .role-opt.on small{color:#E30613;font-weight:700}
 @media (max-width:720px){.role-pick{grid-template-columns:1fr}}
 .user-row{flex-wrap:wrap}
+/* Billetterie : changement de date */
+.bil-date{margin-top:10px;border-radius:8px;padding:10px 12px}
+.bil-date p{margin:0 0 8px;font-size:14px}
+.bil-date p span{color:var(--ink-2);font-size:13px}
+.bil-date.ask{background:#FFF3C4;border:2px solid #F5A10E;animation:bilAsk 1.6s ease-in-out 2}
+@keyframes bilAsk{50%{box-shadow:0 0 0 6px rgba(245,161,14,.25)}}
+.bil-date.wait{background:#F5F6FA;border:1px dashed #C9CEDB}
+.bil-date-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.bil-date .bil-date-btns{margin-top:0}
+.bil-date-ok{display:block;margin-top:6px;color:#16A05D!important;font-size:13px!important}
+.bil-dform{margin-top:10px;display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:end;background:#FCE4F0;border-radius:8px;padding:10px}
+.bil-dform[hidden]{display:none!important}
+.bil-dform label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:700}
+.bil-dform input{padding:9px 10px;border:1.5px solid var(--line);border-radius:8px;font:inherit;font-weight:400;background:#fff;min-width:0}
+.hot-txt{color:#B8050F}
+@media (max-width:720px){.bil-dform{grid-template-columns:1fr}.bil-dform .btn{width:100%;justify-content:center}}
 
 </style>
 </head>
@@ -3201,14 +3217,32 @@ function bilInfo() {
 async function bilMine() {
   try { const r = await Store.call('billet', { query: '&mine=1' }); return r.items || []; } catch { return []; }
 }
+function bilDateBox(it, mine) {
+  if (it.status === 'annulee' || it.status === 'retiree') return '';
+  const p = it.proposal, fd = d => esc(fmtDate(d, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+  const theirs = p && p.by === (mine ? 'cse' : 'salarie');
+  let box = '';
+  if (p && theirs) box = `<div class="bil-date ask"><p>📅 <strong>${mine ? 'Le CSE vous propose' : 'Le salarié propose'} le ${fd(p.date)}</strong>${p.msg ? `<br><span>« ${esc(p.msg)} »</span>` : ''}</p>
+      <div class="bil-date-btns"><button class="btn btn-red btn-sm" data-bil-accept="${esc(it.id)}">${icon('check')}${mine ? "J'accepte cette date" : 'Accepter'}</button><button class="btn btn-light btn-sm" data-bil-dform="${esc(it.id)}">📅 Proposer une autre date</button></div></div>`;
+  else if (p) box = `<div class="bil-date wait"><p>⏳ <strong>Date proposée : ${fd(p.date)}</strong><br><span>En attente de la réponse ${mine ? 'du CSE' : 'du salarié'}.</span></p>
+      <div class="bil-date-btns"><button class="btn btn-light btn-sm" data-bil-dform="${esc(it.id)}">📅 Changer la proposition</button></div></div>`;
+  else box = `<div class="bil-date-btns"><button class="btn btn-light btn-sm" data-bil-dform="${esc(it.id)}">📅 ${mine ? (it.date_visite ? 'Changer la date' : 'Proposer une date') : 'Proposer une autre date au salarié'}</button></div>`;
+  return `${it.date_visite ? `<small class="bil-date-ok">${p ? '📌 Date actuelle' : '✅ Date retenue'} : <b>${fd(it.date_visite)}</b></small>` : ''}${box}
+    <form class="bil-dform" id="bdf-${esc(it.id)}" data-bil-propose="${esc(it.id)}" hidden>
+      <label>Nouvelle date<input type="date" name="date" required min="${today()}"></label>
+      <label>Message <span class="hint">(facultatif)</span><input name="msg" maxlength="300" placeholder="${mine ? 'Ex. : je ne suis pas disponible ce jour-là' : 'Ex. : plus de places ce jour-là, le samedi suivant ?'}"></label>
+      <button class="btn btn-red btn-sm" type="submit">${icon('send')}Envoyer la proposition</button>
+    </form>`;
+}
 function bilOrderRow(it, mine) {
   const st = BIL_ST[it.status] || BIL_ST.nouvelle;
   return `<div class="bil-order ${it.status}">
     <div class="bil-order-num"><small>N°</small><b>${esc(it.num)}</b></div>
     <div class="bil-order-main">${mine ? '' : `<strong>${esc(it.prenom)} ${esc(it.nom)}</strong><small>${[it.telephone, it.email, it.contrat].filter(Boolean).map(esc).join(' · ')}</small>`}
       <p>${it.lines.map(l => `${l.emoji} ${l.qty} × ${esc(l.nom)}${l.label && !/^Billet$/.test(l.label) ? ' (' + esc(l.label) + ')' : ''}`).join('<br>')}</p>
-      <small>${new Date(it.created).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })} · ${it.from ? 'total estimé' : 'total'} <b>${euro(it.total)}</b> · ${it.paiement === 'cheque' ? 'chèque' : 'espèces'} · ${it.retrait === 'email' ? 'billets par email' : 'retrait au CSE'}${it.date_visite ? ' · visite le ' + esc(fmtDate(it.date_visite)) : ''}</small>
-      ${it.note ? `<small class="adh-msg">« ${esc(it.note)} »</small>` : ''}</div>
+      <small>${new Date(it.created).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })} · ${it.from ? 'total estimé' : 'total'} <b>${euro(it.total)}</b> · ${it.paiement === 'cheque' ? 'chèque' : 'espèces'} · ${it.retrait === 'email' ? 'billets par email' : 'retrait au CSE'}</small>
+      ${it.note ? `<small class="adh-msg">« ${esc(it.note)} »</small>` : ''}
+      ${bilDateBox(it, mine)}</div>
     <div class="u-actions"><span class="pill ${st[1]}">${st[0]}</span>
       ${mine ? (it.status === 'nouvelle' ? `<button class="btn btn-light btn-sm" data-bil-cancel="${esc(it.id)}">Annuler</button>` : '')
       : `<select class="u-select bil-select" data-bil-st="${esc(it.id)}" aria-label="Statut de la commande ${esc(it.num)}">${Object.entries(BIL_ST).map(([k, v]) => `<option value="${k}" ${k === it.status ? 'selected' : ''}>${v[0]}</option>`).join('')}</select>
@@ -3236,7 +3270,7 @@ Object.assign(Views, {
           <div class="bil-hero-tickets" aria-hidden="true"><span>🎬</span><span>🦁</span><span>🎢</span></div>
         </section>
         ${bilInfo()}
-        ${(m => m.length ? `<h2 class="bil-h"><span>🧾</span>Mes commandes en cours</h2><div class="user-list bil-orders">${m.map(it => bilOrderRow(it, true)).join('')}</div>` : '')(mine.filter(x => x.status === 'nouvelle' || x.status === 'prete').slice(0, 3))}
+        ${(m => m.length ? `<h2 class="bil-h"><span>🧾</span>Mes commandes en cours</h2><div class="user-list bil-orders">${m.map(it => bilOrderRow(it, true)).join('')}</div>` : '')(mine.filter(x => x.status === 'nouvelle' || x.status === 'prete').sort((a, b) => (b.proposal && b.proposal.by === 'cse') - (a.proposal && a.proposal.by === 'cse')).slice(0, 4))}
         <nav class="bil-filters" aria-label="Catégories">${BIL_CATS.map(([k, l, e]) => `<button type="button" class="chip ${Bil.filter === k ? 'on' : ''}" data-bil-filter="${k}">${e} ${l}</button>`).join('')}</nav>
         <div class="bil-grid">${(Bil.catalog || []).map(bilCard).join('')}</div>
         <h2 class="bil-h"><span>🤝</span>Partenariats</h2>
@@ -3350,8 +3384,9 @@ async function billetsSection() {
   try { items = (await Store.call('billet')).items || []; } catch (x) { e = x.message; }
   window._bil = items;
   const todo = items.filter(x => x.status === 'nouvelle').length, ready = items.filter(x => x.status === 'prete').length;
+  const dateAsk = items.filter(x => x.proposal && x.proposal.by === 'salarie' && x.status !== 'annulee').length;
   const sum = items.filter(x => x.status !== 'annulee' && x.status !== 'retiree').reduce((s, x) => s + x.total, 0);
-  return `<h2 id="billetterie" class="dash-h">🎟️ Billetterie <small>${items.length} commande${items.length > 1 ? 's' : ''} · ${todo} à préparer · ${ready} prête${ready > 1 ? 's' : ''} · ${euro(sum)} à encaisser</small></h2>
+  return `<h2 id="billetterie" class="dash-h">🎟️ Billetterie <small>${items.length} commande${items.length > 1 ? 's' : ''} · ${todo} à préparer · ${ready} prête${ready > 1 ? 's' : ''} · ${euro(sum)} à encaisser${dateAsk ? ` · <b class="hot-txt">📅 ${dateAsk} date${dateAsk > 1 ? 's' : ''} à valider</b>` : ''}</small></h2>
     ${e ? `<div class="alert err">${esc(e)}</div>` : ''}
     <div class="toolbar"><a class="btn btn-light btn-sm" href="#/avantages">${icon('tag')}Voir la billetterie</a>${items.length ? `<button class="btn btn-light btn-sm" data-bil-csv>${icon('download')}Exporter (tableur)</button>` : ''}</div>
     ${items.length ? `<div class="user-list bil-orders">${items.map(it => bilOrderRow(it, false)).join('')}</div>` : '<p class="note" style="margin-top:0">Aucune commande de billets pour le moment.</p>'}
@@ -3366,6 +3401,22 @@ document.addEventListener('click', async e => {
   const to = o.dataset.roleSet, cur = o.dataset.cur;
   const op = to === 'owner' ? 'owner' : to === 'salarie' ? 'salarie' : cur === 'owner' ? 'unowner' : 'elu';
   userAction(o.dataset.uid, op);
+});
+/* Changement de date d'une commande (CSE ⇄ salarié) */
+document.addEventListener('click', async e => {
+  const f = e.target.closest('[data-bil-dform]');
+  if (f) { const form = $('#bdf-' + f.dataset.bilDform); form.hidden = !form.hidden; if (!form.hidden) form.querySelector('input[type=date]').focus(); return; }
+  const a = e.target.closest('[data-bil-accept]'); if (!a) return;
+  a.disabled = true;
+  try { await Store.call('billet', { method: 'POST', query: '&id=' + encodeURIComponent(a.dataset.bilAccept), body: { action: 'accept' } }); toast('Date acceptée.'); render(); }
+  catch (x) { toast(x.message); a.disabled = false; }
+});
+document.addEventListener('submit', async e => {
+  const f = e.target.closest('[data-bil-propose]'); if (!f) return; e.preventDefault();
+  const d = Object.fromEntries(new FormData(f)); if (!d.date) { toast('Choisissez une date.'); return; }
+  const b = f.querySelector('button'); b.disabled = true;
+  try { await Store.call('billet', { method: 'POST', query: '&id=' + encodeURIComponent(f.dataset.bilPropose), body: { action: 'propose', date: d.date, msg: d.msg } }); toast('Proposition envoyée.'); render(); }
+  catch (x) { toast(x.message); b.disabled = false; }
 });
 
 </script>
