@@ -1275,6 +1275,41 @@ body:has(#install-banner:not([hidden])) .notif-banner{bottom:100px}
 .gal-album .cap strong{display:block}
 .gal-album .cap small{display:block;font-weight:600;opacity:.9;font-size:12px}
 .album-back{display:inline-flex;margin-bottom:14px}
+/* Modification des messages */
+.inline-edit{display:grid;gap:8px;min-width:220px}
+.inline-edit textarea{width:100%;border:1.5px solid #E6007E;border-radius:10px;padding:8px 10px;font:inherit;resize:vertical;color:var(--ink);background:#fff}
+.ie-btns{display:flex;gap:6px;justify-content:flex-end}
+.edited{font-style:normal;opacity:.75}
+.grp-acts{display:flex;gap:10px;justify-content:flex-end}
+.grp-msg:not(.mine) .grp-acts{justify-content:flex-start}
+.bub-edit{border:0;background:none;padding:0;font:inherit;font-size:11px;color:inherit;opacity:.85;text-decoration:underline;cursor:pointer}
+/* GIF */
+.gif-btn{font-weight:900;font-size:12px;letter-spacing:.02em;color:#E6007E;border:1.5px solid #F3B9D6}
+.gif-n{position:absolute;left:4px;top:4px;background:#E6007E;color:#fff;font-size:11px;font-weight:900;border-radius:999px;padding:0 6px}
+.gif-out{display:grid;gap:8px;justify-items:center;background:#F5F6FA;border-radius:12px;padding:12px;margin:8px 0 12px}
+.gif-out img{max-width:100%;max-height:320px;border-radius:8px}
+.gif-out-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+#post-photo.is-vid::before{content:"🎬 " attr(data-name);font-weight:700;font-size:13px}
+#post-photo.is-vid img{display:none}
+.notif-ask{text-align:center}
+.na-ico{font-size:46px;line-height:1;margin:4px 0 10px;animation:naRing 1.4s ease-in-out 2}
+@keyframes naRing{10%,30%{transform:rotate(14deg)}20%,40%{transform:rotate(-14deg)}50%{transform:rotate(0)}}
+.notif-ask p{margin:0 0 10px}
+/* Pièces jointes (documents) */
+.file-chip{display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid #F3B9D6;border-radius:12px;padding:8px 12px 8px 8px;text-decoration:none;color:var(--ink);max-width:280px}
+.fc-ext{flex-shrink:0;display:grid;place-items:center;width:42px;height:42px;border-radius:9px;background:linear-gradient(135deg,#E30613,#E6007E);color:#fff;font-weight:900;font-size:11.5px;letter-spacing:.03em}
+.fc-name{min-width:0;font-weight:700;font-size:13.5px;overflow-wrap:anywhere;line-height:1.3}
+.fc-name small{display:block;font-weight:600;font-size:11.5px;color:var(--muted)}
+.grp-bubble .file-chip{margin:2px 0 6px}
+.gf-doc{color:#fff;font-weight:900;font-size:11px;background:linear-gradient(135deg,#E30613,#E6007E);width:100%;height:100%;display:grid;place-items:center}
+.chat-clip{flex-shrink:0;font-size:20px;cursor:pointer;align-self:center}
+.chat-att{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--line);background:#FCE4F0;font-size:13px}
+.chat-att[hidden]{display:none!important}
+.ca-ico{font-size:20px}.ca-name{flex:1;min-width:0;font-weight:700;overflow-wrap:anywhere}.ca-name small{display:block;font-weight:600;color:var(--ink-2)}
+.bub-att{margin:2px 0 4px}
+.bub-att img,.bub-att video{max-width:100%;max-height:260px;border-radius:10px;display:block}
+.bubble.me .file-chip{border-color:rgba(255,255,255,.5)}
+.file-chip,.file-chip .fc-name{color:#0E1A33!important}.file-chip .fc-name small{color:#6B7488!important}
 
 </style>
 </head>
@@ -2892,7 +2927,9 @@ function chatMount() {
         <button class="icon-btn" id="chat-close" aria-label="Fermer">${icon('x')}</button>
       </header>
       <div class="chat-body" id="chat-body"></div>
+      <div class="chat-att" id="chat-att" hidden></div>
       <form class="chat-input" id="chat-form">
+        <label class="icon-btn chat-clip" title="Joindre une photo, une vidéo ou un fichier" aria-label="Joindre une photo, une vidéo ou un fichier"><input type="file" id="chat-file" accept="image/*,video/*,${DOC_ACCEPT}" hidden>📎</label>
         <textarea id="chat-text" rows="1" placeholder="Écrivez votre message…" maxlength="2000" aria-label="Votre message"></textarea>
         <button class="chat-send" type="submit" aria-label="Envoyer">${icon('send')}</button>
       </form>
@@ -2904,9 +2941,18 @@ function chatMount() {
   const ta = $('#chat-text');
   ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px'; });
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); $('#chat-form').requestSubmit(); } });
-  $('#chat-form').onsubmit = async e => { e.preventDefault(); const t = ta.value.trim(); if (!t || Chat.busy) return; Chat.busy = true; ta.value = ''; ta.style.height = 'auto';
-    try { const r = await Store.call('chat', { method: 'POST', query: '&op=send', body: Chat.mode === 'thread' ? { text: t, to: Chat.uid } : { text: t } }); chatAdd([r.msg]); Chat.n = Math.max(Chat.n, r.n); Chat.lastAct = Date.now(); }
-    catch (x) { ta.value = t; toast(x.message); } finally { Chat.busy = false; ta.focus(); } };
+  const att = $('#chat-att'); let chatFile = null;
+  const drawAtt = pct => { att.hidden = !chatFile; if (!chatFile) { att.innerHTML = ''; return; }
+    att.innerHTML = `<span class="ca-ico">${chatFile.type.startsWith('image/') ? '📷' : chatFile.type.startsWith('video/') ? '🎬' : '📎'}</span><span class="ca-name">${esc(chatFile.name)}<small>${fmtSize(chatFile.size)}${pct != null ? ' · envoi ' + pct + ' %' : ''}</small></span><button type="button" class="icon-btn" id="chat-att-x" aria-label="Retirer">${icon('x')}</button>`;
+    $('#chat-att-x').onclick = () => { chatFile = null; drawAtt(); }; };
+  $('#chat-file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; if (f.size > (isDocFile(f) ? 50 : 300) * 1024 * 1024) { toast('Fichier trop lourd.'); return; } chatFile = f; drawAtt(); ta.focus(); };
+  $('#chat-form').onsubmit = async e => { e.preventDefault(); const t = ta.value.trim(); if ((!t && !chatFile) || Chat.busy) return; Chat.busy = true;
+    try {
+      const file = chatFile ? await mediaPrepare(chatFile, pc => drawAtt(pc)) : null;
+      ta.value = ''; ta.style.height = 'auto';
+      const body = { text: t, ...(file ? { file } : {}) }; if (Chat.mode === 'thread') body.to = Chat.uid;
+      const r = await Store.call('chat', { method: 'POST', query: '&op=send', body }); chatFile = null; drawAtt(); chatAdd([r.msg]); Chat.n = Math.max(Chat.n, r.n); Chat.lastAct = Date.now(); }
+    catch (x) { ta.value = t; toast(x.message); drawAtt(); } finally { Chat.busy = false; ta.focus(); } };
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { chatTick(); chatBg(); } });
   document.addEventListener('click', e => { if (e.target.closest('[data-chat-open]')) { e.preventDefault(); chatOpen(); } });
 }
@@ -2961,6 +3007,8 @@ async function chatTick(first) {
     } else {
       const q = Chat.mode === 'me' ? `&op=me&since=${Chat.n}&read=1` : `&op=thread&uid=${encodeURIComponent(Chat.uid)}&since=${Chat.n}&read=1`;
       const r = await Store.call('chat', { query: q });
+      if (!first && Chat.v !== undefined && r.v !== undefined && r.v !== Chat.v) { Chat.v = r.v; Chat.n = 0; Chat.msgs = []; $('#chat-body').innerHTML = ''; return chatTick(true); } // un message a été modifié : on recharge
+      if (r.v !== undefined) Chat.v = r.v;
       if (first) $('#chat-body').innerHTML = '';
       if (r.messages.length) Chat.lastAct = Date.now();
       chatAdd(r.messages); Chat.n = Math.max(Chat.n, r.n || 0);
@@ -2988,7 +3036,7 @@ function chatAdd(list) {
     const day = new Date(m.at).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
     if (!prev || new Date(prev.at).toDateString() !== new Date(m.at).toDateString()) body.insertAdjacentHTML('beforeend', `<div class="chat-day">${esc(day)}</div>`);
     const showBy = !mine(m) && (!prev || prev.from !== m.from || prev.by !== m.by);
-    body.insertAdjacentHTML('beforeend', `<div class="bubble ${mine(m) ? 'me' : 'them'}">${showBy ? `<span class="by">${esc(m.by || '')}</span>` : ''}<div class="txt">${linkify(m.text)}</div><span class="time">${new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span></div>`);
+    body.insertAdjacentHTML('beforeend', `<div class="bubble ${mine(m) ? 'me' : 'them'}" data-ci="${m.i}">${showBy ? `<span class="by">${esc(m.by || '')}</span>` : ''}${m.fileId ? `<div class="bub-att">${attHtml(m)}</div>` : ''}${m.text ? `<div class="txt">${linkify(m.text)}</div>` : ''}<span class="time">${new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}${m.edited ? ' <em class="edited">· modifié</em>' : ''}${mine(m) ? ` · <button type="button" class="bub-edit" data-chat-edit="${m.i}">Modifier</button>` : ''}</span></div>`);
     Chat.msgs.push(m);
   }
   if (nearBottom || fresh.some(mine) || Chat.msgs.length === fresh.length) body.scrollTop = body.scrollHeight;
@@ -3046,8 +3094,8 @@ async function loadComments(t) {
     const r = await Store.call('social', { query: '&t=' + encodeURIComponent(t) });
     const me = Store.user || {}; const elu = me.role === 'elu';
     box.innerHTML = `${r.comments.map(c => `<div class="cmt"><span class="avatar initials xs ${c.elu ? 'elu' : ''}">${esc(initialsOf(c.by))}</span>
-      <div class="cmt-body"><div class="cmt-bubble"><strong>${esc(c.by)}${c.elu ? ' <span class="badge-cgt">CGT</span>' : ''}</strong><p>${esc(c.text)}</p></div>
-      <small>${timeAgo(c.at)}${c.uid === me.id || elu ? ` · <button type="button" class="link-del" data-cmt-del="${esc(t)}" data-id="${esc(c.id)}">Supprimer</button>` : ''}</small></div></div>`).join('')}
+      <div class="cmt-body" data-cid="${esc(c.id)}"><div class="cmt-bubble"><strong>${esc(c.by)}${c.elu ? ' <span class="badge-cgt">CGT</span>' : ''}</strong><p>${esc(c.text)}</p></div>
+      <small>${timeAgo(c.at)}${c.edited ? ' · modifié' : ''}${c.uid === me.id ? ` · <button type="button" class="link-del" data-cmt-edit="${esc(t)}" data-id="${esc(c.id)}">Modifier</button>` : ''}${c.uid === me.id || elu ? ` · <button type="button" class="link-del" data-cmt-del="${esc(t)}" data-id="${esc(c.id)}">Supprimer</button>` : ''}</small></div></div>`).join('')}
       <form class="cmt-form" data-cmt-form="${esc(t)}"><span class="avatar initials xs">${esc(initialsOf(fullName(me)))}</span><textarea rows="1" maxlength="1000" placeholder="Écrire un commentaire…" aria-label="Écrire un commentaire"></textarea><button class="icon-btn send" aria-label="Envoyer">${icon('send')}</button></form>`;
   } catch (e) { box.innerHTML = `<p class="note">${esc(e.message)}</p>`; }
 }
@@ -3097,10 +3145,10 @@ function postHtml(p) {
   const img = p.fileId ? Store.link(p.fileId, p.fileName) : '';
   return `<article class="post ${mentionsMe(p) || p.all && p.uid !== (Store.user || {}).id ? 'mentioned' : ''}" data-post="${esc(p.id)}">${mentionsMe(p) ? '<span class="for-you">📣 Vous êtes mentionné·e</span>' : p.all ? '<span class="for-you all">📢 Pour tout le monde</span>' : ''}
     <header><span class="avatar initials sm ${p.elu ? 'elu' : ''}">${esc(initialsOf(p.by))}</span>
-      <div><strong>${esc(p.by)}</strong>${p.elu ? ' <span class="badge-cgt">Responsable CGT</span>' : ''}<small>${[p.service, timeAgo(p.at)].filter(Boolean).map(esc).join(' · ')}</small></div>
-      ${canDel ? `<button type="button" class="icon-btn" data-post-del="${esc(p.id)}" aria-label="Supprimer la publication" title="Supprimer">${icon('trash')}</button>` : ''}</header>
+      <div><strong>${esc(p.by)}</strong>${p.elu ? ' <span class="badge-cgt">Responsable CGT</span>' : ''}<small>${[p.service, timeAgo(p.at), p.edited ? 'modifié' : ''].filter(Boolean).map(esc).join(' · ')}</small></div>
+      ${p.uid === me.id ? `<button type="button" class="icon-btn" data-post-edit="${esc(p.id)}" aria-label="Modifier la publication" title="Modifier">${icon('edit')}</button>` : ''}${canDel ? `<button type="button" class="icon-btn" data-post-del="${esc(p.id)}" aria-label="Supprimer la publication" title="Supprimer">${icon('trash')}</button>` : ''}</header>
     ${p.text ? hlMentions(longText(p.text, { chars: 420, lines: 8, cls: 'post-text' }), p.mentions, p.all) : ''}
-    ${img ? `<a class="post-img" href="${img}" target="_blank" rel="noopener"><img src="${img}" alt="" loading="lazy"></a>` : ''}
+    ${img ? (/^video\//.test(p.fileType || '') ? `<div class="post-img"><video src="${img}" controls playsinline preload="metadata"></video></div>` : `<a class="post-img" href="${img}" target="_blank" rel="noopener"><img src="${img}" alt="" loading="lazy"></a>`) : ''}
     ${socialBar('feed:' + p.id, { comments: true })}
   </article>`;
 }
@@ -3152,7 +3200,7 @@ Object.assign(Views, {
           <div class="post-box-top"><span class="avatar initials sm ${me.role === 'elu' ? 'elu' : ''}">${esc(initialsOf(fullName(me)))}</span>
           <textarea id="post-text" rows="2" maxlength="3000" placeholder="Quoi de neuf${me.id === 'admin' || !me.prenom ? '' : ', ' + esc(me.prenom)} ? Partagez avec les collègues…"></textarea></div>
           <div class="post-photo" id="post-photo" hidden><img alt=""><button type="button" class="icon-btn" id="post-photo-x" aria-label="Retirer la photo">${icon('x')}</button></div>
-          <div class="post-box-bar"><label class="btn btn-light btn-sm"><input type="file" accept="image/*" id="post-file" hidden>${icon('image')}Photo</label>
+          <div class="post-box-bar"><label class="btn btn-light btn-sm"><input type="file" accept="image/*,video/*" id="post-file" hidden>${icon('image')}Photo / vidéo / GIF</label><button type="button" class="btn btn-light btn-sm" data-gif-make="feed">✨ Créer un GIF</button>
             <button class="btn btn-red btn-sm" type="submit" id="post-go">${icon('send')}Publier</button></div>
         </form>
         <p class="note feed-rules">Restez courtois·e : pas d'attaques personnelles ni d'informations confidentielles. Les responsables CGT peuvent retirer une publication.</p>
@@ -3165,13 +3213,14 @@ Object.assign(Views, {
     if (!$('#post-form')) return;
     feedList(); reloadOpenComments(); Feed.lastAct = Date.now(); feedTick(); mentionAttach($('#post-text'), false);
     const pv = $('#post-photo');
-    $('#post-file').onchange = async e => { const fl = e.target.files[0]; if (!fl) return; try { Feed.photo = await compressImage(fl, 1400, .82); pv.querySelector('img').src = Feed.photo.data; pv.hidden = false; } catch { toast('Photo illisible.'); } e.target.value = ''; };
+    $('#post-file').onchange = e => { const fl = e.target.files[0]; e.target.value = ''; if (!fl) return; Feed.photoFile = fl; Feed.photo = true; const u = URL.createObjectURL(fl);
+      pv.querySelector('img').src = fl.type.startsWith('video/') ? '' : u; pv.classList.toggle('is-vid', fl.type.startsWith('video/')); pv.dataset.name = fl.name; pv.hidden = false; };
     $('#post-photo-x').onclick = () => { Feed.photo = null; pv.hidden = true; };
     $('#post-form').onsubmit = async e => {
       e.preventDefault(); const ta = $('#post-text'), text = ta.value.trim();
       if (!text && !Feed.photo) { ta.focus(); return; }
       const b = $('#post-go'); b.disabled = true;
-      try { await Store.call('feed', { method: 'POST', body: { text, file: Feed.photo, mentions: mentionIds(ta, text) } }); ta._mentions = new Map(); ta.value = ''; ta.style.height = 'auto'; Feed.photo = null; pv.hidden = true; await feedFetch(); feedList(); toast('Publié !'); }
+      try { const file = Feed.photoFile ? await mediaPrepare(Feed.photoFile, pc => { b.textContent = pc + ' %'; }) : null; await Store.call('feed', { method: 'POST', body: { text, file, mentions: mentionIds(ta, text) } }); Feed.photoFile = null; ta._mentions = new Map(); ta.value = ''; ta.style.height = 'auto'; Feed.photo = null; pv.hidden = true; await feedFetch(); feedList(); toast('Publié !'); }
       catch (x) { toast(x.message); } finally { b.disabled = false; }
     };
   },
@@ -3241,16 +3290,15 @@ function grpMsgHtml(m, prev) {
   const day = new Date(m.at).toDateString(); const newDay = !prev || new Date(prev.at).toDateString() !== day;
   const sep = newDay ? `<div class="grp-day">${new Date(m.at).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</div>` : '';
   if (m.deleted) return sep + `<div class="grp-msg ${mine ? 'mine' : ''} deleted" data-i="${m.i}"><div class="grp-bubble"><em>Message supprimé</em></div></div>`;
-  const media = m.fileId ? (/^video\//.test(m.fileType) ? `<video src="${Store.link(m.fileId, m.fileName)}" controls playsinline preload="metadata"></video>`
-    : `<a href="${Store.link(m.fileId, m.fileName)}" target="_blank" rel="noopener"><img src="${Store.link(m.fileId, m.fileName)}" alt="" loading="lazy"></a>`) : '';
+  const media = attHtml(m);
   const canDel = mine || me.role === 'elu';
   return sep + `<div class="grp-msg ${mine ? 'mine' : ''} ${sameAuthor && !newDay && !mentionsMe(m) ? 'cont' : ''} ${mentionsMe(m) || m.all && m.uid !== (Store.user || {}).id ? 'mentioned' : ''}" data-i="${m.i}">
     ${mine ? '' : `<span class="avatar initials xs ${m.elu ? 'elu' : ''}">${esc(initialsOf(m.by))}</span>`}
     <div class="grp-col">
       ${mine || (sameAuthor && !newDay) ? '' : `<div class="grp-name">${esc(m.by)}${m.typ === 'elu' ? ' <span class="badge-elu">🗳️ Élu·e</span>' : ''}${m.elu ? ' <span class="badge-cgt">CGT</span>' : ''}</div>`}
       <div class="grp-bubble ${media && !m.text ? 'media-only' : ''}">${mentionsMe(m) ? '<span class="for-you">📣 Pour vous</span>' : m.all ? '<span class="for-you all">📢 Pour tout le monde</span>' : ''}${media}${m.text ? `<p>${hlMentions(linkify(m.text), m.mentions, m.all)}</p>` : ''}
-        <span class="grp-time">${new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span></div>
-      ${canDel ? `<button type="button" class="grp-del" data-grp-del="${m.i}" aria-label="Supprimer ce message">Supprimer</button>` : ''}
+        <span class="grp-time">${new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}${m.edited ? ' <em class="edited">· modifié</em>' : ''}</span></div>
+      ${mine || canDel ? `<div class="grp-acts">${mine ? `<button type="button" class="grp-del" data-grp-edit="${m.i}">Modifier</button>` : ''}${canDel ? `<button type="button" class="grp-del" data-grp-del="${m.i}" aria-label="Supprimer ce message">Supprimer</button>` : ''}</div>` : ''}
     </div></div>`;
 }
 function grpRender(scroll) {
@@ -3298,7 +3346,8 @@ function groupView(room = '') {
         <div class="grp-list" id="grp-list" aria-live="polite"><p class="note" style="text-align:center;padding:30px">Chargement…</p></div>
         <div class="grp-file" id="grp-file" hidden><span id="grp-file-prev"></span><button type="button" class="icon-btn" id="grp-file-x" aria-label="Retirer le fichier">${icon('x')}</button></div>
         <form class="grp-form" id="grp-form">
-          <label class="icon-btn grp-attach" title="Photo ou vidéo" aria-label="Ajouter une photo ou une vidéo"><input type="file" id="grp-input" accept="image/*,video/*" multiple hidden>${icon('image')}</label>
+          <label class="icon-btn grp-attach" title="Photo, vidéo, GIF ou fichier" aria-label="Ajouter une photo, une vidéo, un GIF ou un fichier"><input type="file" id="grp-input" accept="image/*,video/*,${DOC_ACCEPT}" multiple hidden>${icon('image')}</label>
+          <button type="button" class="icon-btn gif-btn" data-gif-make="grp" title="Créer un GIF" aria-label="Créer un GIF animé">GIF</button>
           <textarea id="grp-text" rows="1" maxlength="2000" placeholder="${elus ? 'Écrire aux élu·e·s… (@ pour citer)' : 'Écrire à tout le monde… (@ pour citer)'}" aria-label="Écrire au groupe"></textarea>
           <button class="icon-btn send" id="grp-send" aria-label="Envoyer">${icon('send')}</button>
         </form>
@@ -3316,12 +3365,12 @@ async function groupAfter() {
   // plusieurs photos / vidéos à la fois (jusqu'à 300 Mo chacune) ; le texte est facultatif
   Group.files = [];
   const drawFiles = () => {
-    $('#grp-file-prev').innerHTML = Group.files.map((g, k) => `<span class="gf">${g.f.type.startsWith('video/') ? `<span class="gf-v">${icon('play')}</span>` : `<img src="${g.u}" alt="">`}${g.pct ? `<b class="gf-p">${g.pct}</b>` : ''}<button type="button" data-gf-x="${k}" aria-label="Retirer">×</button></span>`).join('')
+    $('#grp-file-prev').innerHTML = Group.files.map((g, k) => `<span class="gf">${g.f.type.startsWith('video/') ? `<span class="gf-v">${icon('play')}</span>` : !g.f.type.startsWith('image/') ? `<span class="gf-doc">${esc(docExt(g.f.name))}</span>` : `<img src="${g.u}" alt="">`}${g.pct ? `<b class="gf-p">${g.pct}</b>` : ''}<button type="button" data-gf-x="${k}" aria-label="Retirer">×</button></span>`).join('')
       + (Group.files.length > 1 ? `<small class="gf-n">${Group.files.length} fichiers</small>` : '');
     fileBox.hidden = !Group.files.length;
   };
   $('#grp-input').onchange = e => {
-    const list = [...e.target.files].filter(f => /^(image|video)\//.test(f.type)); e.target.value = ''; if (!list.length) return;
+    const list = [...e.target.files].filter(f => /^(image|video)\//.test(f.type) || isDocFile(f)); e.target.value = ''; if (!list.length) return;
     const big = list.filter(f => f.size > 300 * 1024 * 1024).length; if (big) toast(`${big} fichier(s) de plus de 300 Mo ignoré(s).`);
     for (const f of list.filter(f => f.size <= 300 * 1024 * 1024).slice(0, 20)) Group.files.push({ f, u: URL.createObjectURL(f) });
     drawFiles(); ta.focus();
@@ -3626,9 +3675,9 @@ const Notif = { key: null, synced: false,
     const raw = Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
     const sub = (await r.pushManager.getSubscription()) || await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
     await Store.call('push', { method: 'POST', query: test ? '&test=1' : '', body: { sub: sub.toJSON(), prefs: this.prefs } });
-    this.synced = true; ls.set('cse-notif-on', 1);
+    this.synced = true; ls.set('cse-notif-on', 1); ls.del('cse-notif-off');
   },
-  async disable() { const sub = await this.sub(); if (sub) { try { await Store.call('push', { method: 'DELETE', body: { sub: sub.toJSON() } }); } catch {} await sub.unsubscribe().catch(() => {}); } ls.del('cse-notif-on'); },
+  async disable() { const sub = await this.sub(); if (sub) { try { await Store.call('push', { method: 'DELETE', body: { sub: sub.toJSON() } }); } catch {} await sub.unsubscribe().catch(() => {}); } ls.del('cse-notif-on'); ls.set('cse-notif-off', 1); },
   async unbind() { if (!this.ok || !Store.isLogged()) return; const sub = await this.sub(); if (sub) try { await Store.call('push', { method: 'DELETE', body: { sub: sub.toJSON() } }); } catch {} this.synced = false; },
 };
 async function notifAfterRender() {
@@ -3636,9 +3685,14 @@ async function notifAfterRender() {
   const q = new URLSearchParams(location.search);
   if (q.get('open') === 'chat') { history.replaceState(null, '', location.pathname + location.hash); setTimeout(() => chatOpen(), 300); }
   if (!Notif.ok) return;
-  if (!Notif.synced && Notification.permission === 'granted' && ls.get('cse-notif-on', 0)) { Notif.synced = true; Notif.enable().catch(() => {}); } // rattache l'appareil au compte connecté
-  const nb = $('#notif-banner');
-  if (nb) nb.hidden = !(Notification.permission === 'default' && ls.get('cse-notif-x', 0) < Date.now() && !(isIOS() && !isStandalone()));
+  // Activées par défaut : si le téléphone a déjà autorisé les notifications, l'appareil est (ré)abonné automatiquement,
+  // sauf si la personne les a coupées elle-même dans les réglages.
+  if (!Notif.synced && Notification.permission === 'granted' && !ls.get('cse-notif-off', 0)) { Notif.synced = true; Notif.enable().catch(() => {}); }
+  const nb = $('#notif-banner'); if (nb) nb.hidden = true;
+  // Sinon : on propose de les activer à l'ouverture (une fois par session, puis à nouveau après 3 jours si « Plus tard »)
+  if (Notification.permission === 'default' && !ls.get('cse-notif-off', 0) && ls.get('cse-notif-x', 0) < Date.now() && !ss.get('cse-notif-asked') && !(isIOS() && !isStandalone())) {
+    ss.set('cse-notif-asked', 1); setTimeout(() => { if (!$('#modal').open && Store.isLogged()) notifAsk(); }, 1500);
+  }
 }
 if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.type === 'open') location.href = e.data.url; });
 async function notifSettings() {
@@ -3862,6 +3916,9 @@ const dataUrlToBlob = d => { const [h, b64] = d.split(','); const bin = atob(b64
 async function mediaPrepare(fl, onProg) {
   const SMALL = 2.3 * 1024 * 1024;
   if (fl.size > 300 * 1024 * 1024) throw new Error(`${fl.name} : plus de 300 Mo.`);
+  if (isDocFile(fl) && fl.size > 50 * 1024 * 1024) throw new Error(`${fl.name} : document de plus de 50 Mo.`);
+  if (isDocFile(fl) && !fl.type) { const MT = { pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', odt: 'application/vnd.oasis.opendocument.text', ods: 'application/vnd.oasis.opendocument.spreadsheet', odp: 'application/vnd.oasis.opendocument.presentation', txt: 'text/plain', csv: 'text/csv', zip: 'application/zip' };
+    fl = new File([fl], fl.name, { type: MT[docExt(fl.name).toLowerCase()] || 'application/octet-stream' }); }
   if (fl.type.startsWith('image/') && fl.type !== 'image/gif') {
     const c = await compressImage(fl, 2560, .88); // haute qualité
     if (c.data.length < SMALL * 1.33) return c;
@@ -3877,6 +3934,159 @@ document.addEventListener('click', e => {
   if (!e.target.closest('[data-add="galerie"]')) return; const r = parseRoute();
   if (r.name === 'galerie' && /^album-/.test(r.id || '')) setTimeout(() => { const t = $('#modal-form')?.elements?.titre; const h = $('.page-head h1'); if (t && h && !t.value) t.value = h.textContent.trim(); }, 0);
 });
+
+/* =========================================================================
+   Modifier ses messages : discussions, Messagerie (fil), messagerie privée,
+   commentaires. Seul l'auteur peut modifier ; la mention « modifié » s'affiche.
+   ========================================================================= */
+function inlineEdit(host, text, save) {
+  if (!host || host.querySelector('.inline-edit')) return;
+  const keep = host.innerHTML;
+  host.innerHTML = `<div class="inline-edit"><textarea rows="3" maxlength="3000">${esc(text || '')}</textarea><div class="ie-btns"><button type="button" class="btn btn-light btn-sm" data-ie="no">Annuler</button><button type="button" class="btn btn-red btn-sm" data-ie="ok">${icon('check')}Enregistrer</button></div></div>`;
+  const ta = host.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  ta.style.height = Math.min(ta.scrollHeight + 4, 240) + 'px'; ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight + 4, 240) + 'px'; };
+  host.querySelector('[data-ie="no"]').onclick = () => { host.innerHTML = keep; };
+  host.querySelector('[data-ie="ok"]').onclick = async e => { const b = e.currentTarget; b.disabled = true; try { await save(ta.value.trim()); toast('Message modifié.'); } catch (x) { toast(x.message); b.disabled = false; } };
+  ta.onkeydown = e => { if (e.key === 'Escape') host.innerHTML = keep; };
+}
+document.addEventListener('click', async e => {
+  const g = e.target.closest('[data-grp-edit]');
+  if (g) { const i = Number(g.dataset.grpEdit); const m = Group.msgs.find(x => x.i === i); const row = g.closest('.grp-msg'); if (!m || !row) return;
+    let p = row.querySelector('.grp-bubble p'); if (!p) { p = document.createElement('p'); row.querySelector('.grp-bubble').prepend(p); }
+    inlineEdit(p, m.text, async text => { await Store.call('group', { method: 'POST', query: `&edit=1&i=${i}${grpQ()}`, body: { text } }); await grpLoad(true); grpRender(); }); return; }
+  const f = e.target.closest('[data-post-edit]');
+  if (f) { const id = f.dataset.postEdit; const p = (Feed.items || []).find(x => x.id === id); const art = f.closest('.post'); if (!p || !art) return;
+    let box = art.querySelector('.content-wrap'); if (box) { box.classList.remove('collapsed'); box.nextElementSibling?.classList.contains('read-more') && box.nextElementSibling.remove(); } else { box = document.createElement('div'); art.querySelector('header').after(box); }
+    inlineEdit(box, p.text, async text => { await Store.call('feed', { method: 'POST', body: { id, edit: true, text } }); await feedFetch(); feedList(); }); return; }
+  const c = e.target.closest('[data-chat-edit]');
+  if (c) { const i = Number(c.dataset.chatEdit); const m = Chat.msgs.find(x => x.i === i); const txt = c.closest('.bubble')?.querySelector('.txt'); if (!m || !txt) return;
+    inlineEdit(txt, m.text, async text => { const r = await Store.call('chat', { method: 'POST', query: '&op=edit', body: { i, text, to: Chat.mode === 'thread' ? Chat.uid : undefined } }); m.text = text; m.edited = r.msg.edited; Chat.v = r.v; txt.innerHTML = linkify(text); }); return; }
+  const k = e.target.closest('[data-cmt-edit]');
+  if (k) { const t = k.dataset.cmtEdit, id = k.dataset.id; const body = k.closest('[data-cid]'); const p = body && body.querySelector('.cmt-bubble p'); if (!p) return;
+    inlineEdit(p, p.textContent, async text => { await Store.call('social', { method: 'POST', query: '&op=editcomment', body: { t, id, text } }); await loadComments(t); }); }
+});
+
+/* =========================================================================
+   Créateur de GIF animé (dans le navigateur, sans service extérieur) :
+   2 à 15 photos → GIF qui tourne en boucle, vitesse réglable, texte facultatif.
+   ========================================================================= */
+const GIF_PAL = (() => { const p = []; for (let r = 0; r < 6; r++) for (let g = 0; g < 7; g++) for (let b = 0; b < 6; b++) p.push([Math.round(r * 51), Math.round(g * 42.5), Math.round(b * 51)]); while (p.length < 256) p.push([255, 255, 255]); return p; })();
+function gifQuantize(rgba, w, h) { // palette 6×7×6 + diffusion d'erreur (Floyd-Steinberg)
+  const out = new Uint8Array(w * h), e = new Float32Array(w * h * 3);
+  for (let i = 0; i < w * h; i++) { e[i * 3] = rgba[i * 4]; e[i * 3 + 1] = rgba[i * 4 + 1]; e[i * 3 + 2] = rgba[i * 4 + 2]; }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, r = Math.max(0, Math.min(255, e[i * 3])), g = Math.max(0, Math.min(255, e[i * 3 + 1])), b = Math.max(0, Math.min(255, e[i * 3 + 2]));
+    const ri = Math.round(r / 51), gi = Math.round(g / 42.5), bi = Math.round(b / 51), k = ri * 42 + gi * 6 + bi; out[i] = k;
+    const c = GIF_PAL[k], er = r - c[0], eg = g - c[1], eb = b - c[2];
+    const add = (xx, yy, f) => { if (xx < 0 || xx >= w || yy >= h) return; const j = (yy * w + xx) * 3; e[j] += er * f; e[j + 1] += eg * f; e[j + 2] += eb * f; };
+    add(x + 1, y, 7 / 16); add(x - 1, y + 1, 3 / 16); add(x, y + 1, 5 / 16); add(x + 1, y + 1, 1 / 16);
+  }
+  return out;
+}
+function gifLzw(px, out) {
+  const min = 8, clear = 256, eoi = 257; out.push(min);
+  let size = 9, next = 258, dict = new Map(), acc = 0, bits = 0; const buf = [];
+  const emit = c => { acc |= c << bits; bits += size; while (bits >= 8) { buf.push(acc & 255); acc >>>= 8; bits -= 8; } };
+  emit(clear); let pre = px[0];
+  for (let i = 1; i < px.length; i++) {
+    const k = px[i], key = pre * 256 + k, v = dict.get(key);
+    if (v !== undefined) { pre = v; continue; }
+    emit(pre);
+    if (next < 4096) { dict.set(key, next++); if (next > (1 << size) && size < 12) size++; }
+    else { emit(clear); dict = new Map(); size = 9; next = 258; }
+    pre = k;
+  }
+  emit(pre); emit(eoi); if (bits > 0) buf.push(acc & 255);
+  for (let i = 0; i < buf.length; i += 255) { const n = Math.min(255, buf.length - i); out.push(n); for (let j = 0; j < n; j++) out.push(buf[i + j]); }
+  out.push(0);
+}
+function gifEncode(frames, w, h, delayCs) {
+  const o = []; const b = v => o.push(v & 255), w16 = v => { b(v); b(v >> 8); }, str = t => { for (const c of t) b(c.charCodeAt(0)); };
+  str('GIF89a'); w16(w); w16(h); b(0xF7); b(0); b(0);
+  for (const c of GIF_PAL) { b(c[0]); b(c[1]); b(c[2]); }
+  b(0x21); b(0xFF); b(11); str('NETSCAPE2.0'); b(3); b(1); w16(0); b(0); // boucle infinie
+  for (const f of frames) { b(0x21); b(0xF9); b(4); b(0); w16(delayCs); b(0); b(0); b(0x2C); w16(0); w16(0); w16(w); w16(h); b(0); gifLzw(f, o); }
+  b(0x3B); return new Uint8Array(o);
+}
+async function gifBuild(files, { size = 480, delay = 0.6, top = '', bottom = '' } = {}, onProg) {
+  const imgs = []; for (const f of files) { const u = URL.createObjectURL(f); const im = new Image(); im.src = u; await im.decode().catch(() => {}); if (im.naturalWidth) imgs.push(im); }
+  if (imgs.length < 1) throw new Error('Photos illisibles.');
+  const r0 = imgs[0].naturalWidth / imgs[0].naturalHeight; const w = r0 >= 1 ? size : Math.round(size * r0), h = r0 >= 1 ? Math.round(size / r0) : size;
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const cx = cv.getContext('2d', { willReadFrequently: true });
+  const frames = [];
+  for (let k = 0; k < imgs.length; k++) {
+    const im = imgs[k], s = Math.max(w / im.naturalWidth, h / im.naturalHeight); // recadrage « remplir »
+    cx.fillStyle = '#000'; cx.fillRect(0, 0, w, h); cx.drawImage(im, (w - im.naturalWidth * s) / 2, (h - im.naturalHeight * s) / 2, im.naturalWidth * s, im.naturalHeight * s);
+    const txt = (t, y, base) => { if (!t) return; const fs = Math.round(w / Math.max(9, t.length * 0.62)); cx.font = `900 ${Math.min(fs, Math.round(h / 7))}px Impact, 'Arial Black', sans-serif`; cx.textAlign = 'center'; cx.textBaseline = base;
+      cx.lineWidth = Math.max(3, Math.round(w / 90)); cx.strokeStyle = '#000'; cx.lineJoin = 'round'; cx.strokeText(t.toUpperCase(), w / 2, y); cx.fillStyle = '#fff'; cx.fillText(t.toUpperCase(), w / 2, y); };
+    txt(top, Math.round(h * 0.04), 'top'); txt(bottom, Math.round(h * 0.96), 'bottom');
+    frames.push(gifQuantize(cx.getImageData(0, 0, w, h).data, w, h)); onProg && onProg(Math.round((k + 1) / imgs.length * 90));
+    await new Promise(r => setTimeout(r, 0));
+  }
+  const bytes = gifEncode(frames, w, h, Math.round(delay * 100)); onProg && onProg(100);
+  return new File([bytes], `gif-${Date.now().toString(36)}.gif`, { type: 'image/gif' });
+}
+const GIFM = { files: [], out: null, target: 'grp' };
+function gifModal(target) {
+  GIFM.files = []; GIFM.out = null; GIFM.target = target;
+  $('#modal-title').textContent = '✨ Créer un GIF animé';
+  $('#modal-body').innerHTML = `<div class="gif-make">
+    <label class="up-drop" for="gif-files">${icon('image')}<span><strong>Choisir 2 à 15 photos</strong><small>Elles défileront en boucle, dans l'ordre choisi</small></span></label>
+    <input id="gif-files" type="file" accept="image/*" multiple hidden><div class="up-grid" id="gif-prev"></div>
+    <div class="row-2"><div class="field"><label for="gif-top">Texte en haut <span class="hint">(facultatif)</span></label><input id="gif-top" maxlength="40" placeholder="Ex : TOUS ENSEMBLE"></div>
+    <div class="field"><label for="gif-bot">Texte en bas <span class="hint">(facultatif)</span></label><input id="gif-bot" maxlength="40" placeholder="Ex : ON LÂCHE RIEN"></div></div>
+    <div class="field"><label for="gif-speed">Vitesse : <b id="gif-speed-v">0,6 s</b> par image</label><input id="gif-speed" type="range" min="0.15" max="2" step="0.05" value="0.6"></div>
+    <div id="gif-result"></div>
+    <button type="button" class="btn btn-red" id="gif-go" style="width:100%;justify-content:center" disabled>✨ Créer le GIF</button></div>`;
+  $('#modal-form').onsubmit = e => e.preventDefault();
+  const draw = () => { $('#gif-prev').innerHTML = GIFM.files.map((f, k) => `<div class="up-item"><img src="${URL.createObjectURL(f)}" alt=""><span class="gif-n">${k + 1}</span><button type="button" class="up-x" data-gif-x="${k}" aria-label="Retirer">×</button></div>`).join('')
+    + (GIFM.files.length ? `<p class="up-count">${GIFM.files.length} photo${GIFM.files.length > 1 ? 's' : ''} · <label for="gif-files" class="text-link">en ajouter</label></p>` : ''); $('#gif-go').disabled = GIFM.files.length < 2; };
+  $('#gif-files').onchange = e => { GIFM.files.push(...[...e.target.files].filter(f => f.type.startsWith('image/'))); GIFM.files = GIFM.files.slice(0, 15); e.target.value = ''; draw(); };
+  $('#gif-prev').onclick = e => { const x = e.target.closest('[data-gif-x]'); if (x) { GIFM.files.splice(Number(x.dataset.gifX), 1); draw(); } };
+  $('#gif-speed').oninput = e => { $('#gif-speed-v').textContent = String(Number(e.target.value).toFixed(2)).replace(/0$/, '').replace('.', ',') + ' s'; };
+  $('#gif-go').onclick = async () => {
+    const b = $('#gif-go'); b.disabled = true;
+    try {
+      const f = await gifBuild(GIFM.files, { delay: Number($('#gif-speed').value), top: $('#gif-top').value.trim(), bottom: $('#gif-bot').value.trim() }, pc => { b.textContent = `Création… ${pc} %`; });
+      GIFM.out = f; const u = URL.createObjectURL(f);
+      $('#gif-result').innerHTML = `<div class="gif-out"><img src="${u}" alt="Aperçu du GIF"><small>${(f.size / 1048576).toFixed(1).replace('.', ',')} Mo</small>
+        <div class="gif-out-btns"><button type="button" class="btn btn-red" id="gif-use">${icon('send')}${GIFM.target === 'feed' ? 'Ajouter à ma publication' : 'Ajouter au message'}</button><a class="btn btn-light" href="${u}" download="${f.name}">${icon('download')}Télécharger</a></div></div>`;
+      $('#gif-use').onclick = () => gifUse(f); b.textContent = '↻ Recréer avec ces réglages';
+    } catch (x) { toast(x.message); b.textContent = '✨ Créer le GIF'; }
+    finally { b.disabled = GIFM.files.length < 2; }
+  };
+  if (!$('#modal').open) $('#modal').showModal();
+}
+function gifUse(f) {
+  $('#modal').close();
+  if (GIFM.target === 'feed') { const pv = $('#post-photo'); if (!pv) return; Feed.photoFile = f; Feed.photo = true; pv.querySelector('img').src = URL.createObjectURL(f); pv.classList.remove('is-vid'); pv.hidden = false; $('#post-text')?.focus(); return; }
+  const inp = $('#grp-input'); if (!inp) return; const dt = new DataTransfer(); dt.items.add(f); inp.files = dt.files; inp.dispatchEvent(new Event('change'));
+}
+document.addEventListener('click', e => { const g = e.target.closest('[data-gif-make]'); if (g) { e.preventDefault(); gifModal(g.dataset.gifMake); } });
+function notifAsk() {
+  $('#modal-title').textContent = '🔔 Restez informé·e';
+  $('#modal-body').innerHTML = `<div class="notif-ask"><div class="na-ico">🔔</div>
+    <p><strong>Activez les notifications pour ne rien manquer</strong> : réponses de la section, messages des discussions, mentions @, @tous, billetterie…</p>
+    <p class="note">Vous pourrez les couper ou choisir lesquelles recevoir à tout moment : menu de votre compte → 🔔 Notifications.</p>
+    <button type="button" class="btn btn-red" id="na-yes" style="width:100%;justify-content:center">🔔 Activer les notifications</button>
+    <button type="button" class="btn btn-light" id="na-later" style="width:100%;justify-content:center;margin-top:8px">Plus tard</button></div>`;
+  $('#modal-form').onsubmit = e => e.preventDefault();
+  $('#na-yes').onclick = async () => { $('#modal').close(); try { await Notif.enable(true); toast('Notifications activées !'); } catch (x) { toast(x.message); } };
+  $('#na-later').onclick = () => { ls.set('cse-notif-x', Date.now() + 3 * 864e5); $('#modal').close(); };
+  $('#modal').showModal();
+}
+
+/* Pièces jointes : photo, vidéo ou document (PDF, Word, Excel…) */
+const DOC_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.txt,.csv,.zip';
+const isDocFile = f => !/^(image|video)\//.test(f.type || '') && /\.(pdf|docx?|xlsx?|pptx?|od[tsp]|txt|csv|zip)$/i.test(f.name || '');
+const docExt = n => (String(n || '').split('.').pop() || 'doc').slice(0, 4).toUpperCase();
+function attHtml(m) {
+  if (!m || !m.fileId) return '';
+  const url = Store.link(m.fileId, m.fileName), t = m.fileType || '';
+  if (/^video\//.test(t)) return `<video src="${url}" controls playsinline preload="metadata"></video>`;
+  if (/^image\//.test(t)) return `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="" loading="lazy"></a>`;
+  return `<a class="file-chip" href="${url}" target="_blank" rel="noopener" download="${esc(m.fileName || '')}"><span class="fc-ext">${esc(docExt(m.fileName))}</span><span class="fc-name">${esc(m.fileName || 'Fichier')}<small>${m.fileSize ? fmtSize(m.fileSize) + ' · ' : ''}Ouvrir / télécharger</small></span></a>`;
+}
 
 </script>
 </body>

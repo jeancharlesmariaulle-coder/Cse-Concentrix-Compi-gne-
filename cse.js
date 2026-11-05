@@ -207,12 +207,16 @@ async function chatPush(uid, msg, metaInit) {
   msg.i = meta.n; msg.at = new Date().toISOString();
   const len = await redis('RPUSH', chatKey(uid), JSON.stringify(msg));
   meta.n = (meta.base || 0) + Number(len);
-  if (len > CHAT_MAX) { await redis('LTRIM', chatKey(uid), len - CHAT_KEEP, -1); meta.base = meta.n - CHAT_KEEP; }
-  Object.assign(meta, { lastText: msg.text.slice(0, 120), lastAt: msg.at, lastFrom: msg.from });
+  if (len > CHAT_MAX) {
+    for (const x of (await redis('LRANGE', chatKey(uid), 0, len - CHAT_KEEP - 1)) || []) { try { const o = JSON.parse(x); if (o.fileId) await delFile(o.fileId); } catch {} }
+    await redis('LTRIM', chatKey(uid), len - CHAT_KEEP, -1); meta.base = meta.n - CHAT_KEEP;
+  }
+  const shown = msg.text || (msg.fileId ? (/^image\//.test(msg.fileType || '') ? '📷 Photo' : /^video\//.test(msg.fileType || '') ? '🎬 Vidéo' : '📎 ' + (msg.fileName || 'Fichier')) : '');
+  Object.assign(meta, { lastText: shown.slice(0, 120), lastAt: msg.at, lastFrom: msg.from });
   if (msg.from === 'user') meta.unreadCgt = (meta.unreadCgt || 0) + 1; else meta.unreadUser = (meta.unreadUser || 0) + 1;
   await redis('HSET', 'cse:chats', uid, JSON.stringify(meta));
-  if (msg.from === 'user') await notify({ to: 'admins', except: uid, pref: 'chat', title: `💬 ${msg.by}`, body: msg.text, url: '/?open=chat', tag: 'chat-' + uid });
-  else await notify({ to: uid, pref: 'chat', title: `💬 ${msg.by || 'Section CGT'}`, body: msg.text, url: '/?open=chat', tag: 'chat' });
+  if (msg.from === 'user') await notify({ to: 'admins', except: uid, pref: 'chat', title: `💬 ${msg.by}`, body: shown, url: '/?open=chat', tag: 'chat-' + uid });
+  else await notify({ to: uid, pref: 'chat', title: `💬 ${msg.by || 'Section CGT'}`, body: shown, url: '/?open=chat', tag: 'chat' });
   return { msg, meta };
 }
 
@@ -236,13 +240,15 @@ async function socSummary(t) {
 
 /* ---------- Gros fichiers (photos HD, vidéos) : envoi direct du téléphone vers Vercel Blob ----------
    Le serveur ne fait que délivrer une clé d'envoi temporaire ; le fichier ne transite pas par la fonction. */
-const BIG_MAX = 300 * 1024 * 1024; // 300 Mo par fichier
+const BIG_MAX = 300 * 1024 * 1024; // 300 Mo par photo / vidéo
+const DOC_MAX = 50 * 1024 * 1024;   // 50 Mo par document
+const DOC_RE = /^(application\/(pdf|msword|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)|vnd\.ms-excel|vnd\.ms-powerpoint|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation)|zip|x-zip-compressed)|text\/(plain|csv))$/;
 const BLOB_URL_RE = /^https:\/\/[a-z0-9]+\.public\.blob\.vercel-storage\.com\/media\/[\w\/.%-]+$/i;
 function blobRef(f) { // fichier déjà envoyé sur Vercel Blob par le navigateur
   const url = String(f && f.url || '');
   if (!BLOB_URL_RE.test(url)) throw fail(400, 'Fichier invalide.');
   const type = String(f.type || '').slice(0, 60);
-  if (!/^(image|video)\//.test(type)) throw fail(400, 'Photo ou vidéo uniquement.');
+  if (!/^(image|video)\//.test(type) && !DOC_RE.test(type)) throw fail(400, 'Format de fichier non pris en charge.');
   return { fileId: url, fileName: clip(f.name || 'fichier'), fileType: type, fileSize: Math.max(0, Math.min(Number(f.size) || 0, BIG_MAX)) };
 }
 async function delFile(id) {
@@ -272,8 +278,8 @@ const isEluCse = u => !!u && (u.type === 'elu' || u.role === 'elu');
 async function saveMedia(f) {
   if (f && f.url) return blobRef(f);
   const data = String(f && f.data || '');
-  const m = data.match(/^data:((image\/(jpeg|png|webp|gif))|(video\/(mp4|webm|quicktime)));base64,/);
-  if (!m) throw fail(400, 'Fichier non pris en charge (photo ou vidéo uniquement).');
+  const m = data.match(/^data:([\w.+-]+\/[\w.+-]+);base64,/);
+  if (!m || !(/^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|quicktime))$/.test(m[1]) || DOC_RE.test(m[1]))) throw fail(400, 'Fichier non pris en charge.');
   if (data.length > MAX_FILE) throw fail(413, 'Fichier trop lourd (2,4 Mo maximum). Pour une vidéo plus longue, partagez plutôt un lien.');
   const id = newId(); await redis('SET', `cse:file:${id}`, data);
   return { fileId: id, fileName: clip(f.name || 'fichier'), fileType: data.slice(5, data.indexOf(';')) };
@@ -554,20 +560,33 @@ const A = {
       const messages = await chatRead(meta, req.query.since);
       const unread = meta.unreadUser || 0;
       if (read && unread) { meta.unreadUser = 0; await redis('HSET', 'cse:chats', u.id, JSON.stringify(meta)); }
-      return { n: meta.n, unread: read ? 0 : unread, messages };
+      return { n: meta.n, v: meta.v || 0, unread: read ? 0 : unread, messages };
+    }
+    if (op === 'edit') { // modifier son propre message (salarié·e : les siens ; section : les réponses de la section)
+      const b = body(req); const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 2000); if (!text) throw fail(400, 'Message vide.');
+      const uid = b.to ? String(b.to) : u.id; if (b.to && !elu) throw fail(403, 'Réservé aux responsables.');
+      const meta = await chatMeta(uid); if (!meta) throw fail(404, 'Conversation introuvable.');
+      const i = Number(b.i); if (!(i >= (meta.base || 0) && i < meta.n)) throw fail(404, 'Message introuvable.');
+      const pos = i - (meta.base || 0); const msg = JSON.parse(await redis('LINDEX', chatKey(uid), pos) || 'null');
+      if (!msg || msg.from !== (b.to ? 'cgt' : 'user')) throw fail(403, 'Vous ne pouvez modifier que vos propres messages.');
+      msg.text = text; msg.edited = new Date().toISOString(); await redis('LSET', chatKey(uid), pos, JSON.stringify(msg));
+      meta.v = (meta.v || 0) + 1; await redis('HSET', 'cse:chats', uid, JSON.stringify(meta));
+      return { ok: true, msg, v: meta.v };
     }
     if (op === 'send') {
       const b = body(req); const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
-      if (!text) throw fail(400, 'Message vide.');
+      const hasFile = !!(b.file && (b.file.data || b.file.url));
+      if (!text && !hasFile) throw fail(400, 'Message vide.');
       await rateLimit(req, 'chat', 120);
+      const att = hasFile ? await saveMedia(b.file) : {}; // photo, vidéo ou document joint
       if (b.to) { // réponse de la section
         if (!elu) throw fail(403, 'Réservé aux responsables.');
         const meta = await chatMeta(String(b.to)); if (!meta) throw fail(404, 'Conversation introuvable.');
         const by = u.id === 'admin' ? 'Section CGT' : `${u.prenom} · CGT`;
-        const r = await chatPush(meta.uid, { from: 'cgt', by, text });
+        const r = await chatPush(meta.uid, { from: 'cgt', by, uid: u.id, text, ...att });
         return { n: r.meta.n, msg: r.msg };
       }
-      const r = await chatPush(u.id, { from: 'user', by: `${u.prenom} ${u.nom}`, text },
+      const r = await chatPush(u.id, { from: 'user', by: `${u.prenom} ${u.nom}`, uid: u.id, text, ...att },
         { name: `${u.prenom} ${u.nom}`, email: u.email, service: u.service || '' });
       return { n: r.meta.n, msg: r.msg };
     }
@@ -583,9 +602,12 @@ const A = {
     if (op === 'thread') {
       const messages = await chatRead(meta, req.query.since);
       if (read && meta.unreadCgt) { meta.unreadCgt = 0; await redis('HSET', 'cse:chats', uid, JSON.stringify(meta)); }
-      return { n: meta.n, meta, messages };
+      return { n: meta.n, v: meta.v || 0, meta, messages };
     }
-    if (op === 'delete') { await redis('DEL', chatKey(uid)); await redis('HDEL', 'cse:chats', uid); return { ok: true }; }
+    if (op === 'delete') {
+      for (const x of (await redis('LRANGE', chatKey(uid), 0, -1)) || []) { try { const o = JSON.parse(x); if (o.fileId) await delFile(o.fileId); } catch {} }
+      await redis('DEL', chatKey(uid)); await redis('HDEL', 'cse:chats', uid); return { ok: true };
+    }
     throw fail(400, 'Action inconnue');
   },
 
@@ -628,6 +650,13 @@ const A = {
       const sum = await socSummary(t); if (t.startsWith('feed:')) await bumpFeed();
       return { comment: c, sum };
     }
+    if (op === 'editcomment') {
+      const id = String(b.id || ''); const v = await redis('HGET', `cse:soc:${t}`, `c:${id}`); if (!v) throw fail(404, 'Commentaire introuvable.');
+      const c = JSON.parse(v); if (c.uid !== u.id) throw fail(403, 'Vous ne pouvez modifier que vos propres commentaires.');
+      const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 1000); if (!text) throw fail(400, 'Commentaire vide.');
+      c.text = text; c.edited = new Date().toISOString(); await redis('HSET', `cse:soc:${t}`, `c:${id}`, JSON.stringify(c));
+      if (t.startsWith('feed:')) await bumpFeed(); return { comment: c };
+    }
     if (op === 'uncomment') {
       const id = String(b.id || ''); const v = await redis('HGET', `cse:soc:${t}`, `c:${id}`);
       if (!v) throw fail(404, 'Commentaire introuvable.');
@@ -658,12 +687,21 @@ const A = {
       return { ok: true };
     }
     const b = body(req); const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 3000);
-    if (!text && !(b.file && b.file.data)) throw fail(400, 'Publication vide.');
+    if (b.edit && b.id) { // modifier sa publication
+      const prev = await redis('HGET', 'cse:feed', String(b.id)); if (!prev) throw fail(404, 'Publication introuvable.');
+      const p = JSON.parse(prev); if (p.uid !== u.id) throw fail(403, 'Vous ne pouvez modifier que vos propres publications.');
+      if (!text && !p.fileId) throw fail(400, 'Publication vide.');
+      p.text = text; p.edited = new Date().toISOString();
+      if (p.mentions) { p.mentions = p.mentions.filter(x => text.includes('@' + x.name)); if (!p.mentions.length) delete p.mentions; }
+      if (p.all && !/(^|\s)@tous(?![\p{L}\d])/iu.test(text)) delete p.all;
+      await redis('HSET', 'cse:feed', p.id, JSON.stringify(p)); await bumpFeed(); return { item: p };
+    }
+    if (!text && !(b.file && (b.file.data || b.file.url))) throw fail(400, 'Publication vide.');
     await rateLimit(req, 'post', 15);
     const p = { id: newId(), uid: u.id, by: who(u), elu: u.role === 'elu', service: u.id === 'admin' ? '' : (u.service || ''), text, at: new Date().toISOString() };
     const mentions = (await resolveMentions(b.mentions, text, false)).filter(m => m.id !== u.id); if (mentions.length) p.mentions = mentions;
     const toAll = /(^|\s)@tous(?![\p{L}\d])/iu.test(text) && isEluCse(u); if (toAll) p.all = true;
-    if (b.file && b.file.data) Object.assign(p, await saveDataFile(b.file));
+    if (b.file && (b.file.data || b.file.url)) Object.assign(p, await saveMedia(b.file));
     await redis('HSET', 'cse:feed', p.id, JSON.stringify(p));
     if (mentions.length) await notify({ to: mentions.map(m => m.id), pref: 'mention', title: `📣 ${p.by} vous a mentionné·e`, body: `Messagerie : ${text}`, url: '/#/communaute', tag: 'mention' });
     if (toAll) await notify({ to: 'all', except: u.id, exceptList: mentions.map(m => m.id), pref: 'mention', title: `📢 ${p.by} à tout le monde`, body: `Messagerie : ${text}`, url: '/#/communaute', tag: 'tous' });
@@ -697,6 +735,19 @@ const A = {
       const from = Math.max(0, since - m.base);
       const raw = (await redis('LRANGE', LK, from, -1)) || [];
       return { n: m.n, v: m.v || 0, base: m.base, messages: raw.map(x => { try { return JSON.parse(x); } catch { return null; } }).filter(Boolean) };
+    }
+    if (req.method === 'POST' && req.query.edit) {
+      const b = body(req); const i = Number(req.query.i); const m = await groupMeta(room);
+      if (!(i >= m.base && i < m.n)) throw fail(404, 'Message introuvable.');
+      const msg = JSON.parse(await redis('LINDEX', LK, i - m.base) || 'null');
+      if (!msg || msg.deleted) throw fail(404, 'Message introuvable.');
+      if (msg.uid !== u.id) throw fail(403, 'Vous ne pouvez modifier que vos propres messages.');
+      const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 2000); if (!text && !msg.fileId) throw fail(400, 'Message vide.');
+      msg.text = text; msg.edited = new Date().toISOString();
+      if (msg.mentions) { msg.mentions = msg.mentions.filter(x => text.includes('@' + x.name)); if (!msg.mentions.length) delete msg.mentions; }
+      if (msg.all && !/(^|\s)@tous(?![\p{L}\d])/iu.test(text)) delete msg.all;
+      await redis('LSET', LK, i - m.base, JSON.stringify(msg)); m.v = (m.v || 0) + 1; await redis('SET', MK, JSON.stringify(m));
+      return { ok: true, msg };
     }
     if (req.method === 'DELETE') {
       const i = Number(req.query.i); const m = await groupMeta(room);
@@ -741,12 +792,13 @@ const A = {
     if (!BLOB_TOKEN) throw fail(503, "Le stockage des gros fichiers n'est pas branché.");
     await rateLimit(req, 'upl', 300);
     const b = body(req); const type = String(b.type || '').toLowerCase(); const size = Number(b.size) || 0;
-    if (!/^(image\/(jpeg|png|webp|gif|heic|heif)|video\/(mp4|webm|quicktime|3gpp|x-m4v))$/.test(type)) throw fail(400, 'Format non pris en charge (photo ou vidéo uniquement).');
-    if (size > BIG_MAX) throw fail(413, `Fichier trop lourd (${Math.round(size / 1048576)} Mo) : 300 Mo maximum.`);
+    const isDoc = DOC_RE.test(type);
+    if (!isDoc && !/^(image\/(jpeg|png|webp|gif|heic|heif)|video\/(mp4|webm|quicktime|3gpp|x-m4v))$/.test(type)) throw fail(400, 'Format non pris en charge (photo, vidéo, PDF, Word, Excel, PowerPoint…).');
+    if (size > (isDoc ? DOC_MAX : BIG_MAX)) throw fail(413, `Fichier trop lourd (${Math.round(size / 1048576)} Mo) : ${isDoc ? 50 : 300} Mo maximum.`);
     const ext = (String(b.name || '').match(/\.([a-z0-9]{2,5})$/i) || [, type.split('/')[1].replace('quicktime', 'mov')])[1].toLowerCase();
     const pathname = `media/${new Date().toISOString().slice(0, 7)}/${u.id}-${Date.now().toString(36)}.${ext}`;
     const { generateClientTokenFromReadWriteToken } = require('@vercel/blob/client');
-    const token = await generateClientTokenFromReadWriteToken({ token: BLOB_TOKEN, pathname, allowedContentTypes: [type], maximumSizeInBytes: BIG_MAX, addRandomSuffix: true, validUntil: Date.now() + 2 * 3600e3 });
+    const token = await generateClientTokenFromReadWriteToken({ token: BLOB_TOKEN, pathname, allowedContentTypes: [type], maximumSizeInBytes: isDoc ? DOC_MAX : BIG_MAX, addRandomSuffix: true, validUntil: Date.now() + 2 * 3600e3 });
     return { token, pathname, api: 'https://vercel.com/api/blob' };
   },
 
