@@ -514,6 +514,7 @@ const A = {
       if (prev) { try { const it = JSON.parse(prev); await delFile(it.fileId); await delFile(it.docId); } catch {} }
       await redis('HDEL', key, id);
       if (['actus', 'events', 'galerie'].includes(col)) { try { await dropTarget(`${col}:${id}`); } catch {} }
+      if (col === 'actus' && await redis('HDEL', 'cse:feed', 'actu-' + id)) { try { await dropTarget('feed:actu-' + id); } catch {} await bumpFeed(); }
       return { ok: true };
     }
     // POST
@@ -529,7 +530,7 @@ const A = {
       await notify({ to: 'admins', except: u.id, pref: 'contact', title: '✉️ Nouveau message « Nous contacter »', body: `${anon ? 'Anonyme' : item.nom} · ${item.sujet || ''} : ${item.message}`, url: '/#/messages', tag: 'contact' });
       return { item };
     }
-    await need(req, 'elu');
+    const u0 = await need(req, 'elu');
     let item = {};
     if (b.id) { const prev = await redis('HGET', key, String(b.id)); if (prev) item = JSON.parse(prev); }
     for (const f of FIELDS[col]) if (b[f] !== undefined) item[f] = clip(b[f], f);
@@ -553,7 +554,18 @@ const A = {
     if (b.doc && b.doc.data) await storeFile(b.doc, 'doc');       // document joint (PDF, Word…)
     if (b.removeDoc && item.docId) { await redis('DEL', `cse:file:${item.docId}`); for (const k of ['docId', 'docName', 'docType', 'docSize']) delete item[k]; }
     if (col === 'galerie' && !item.fileId && !item.video) throw fail(400, 'Ajoutez une photo, une vidéo ou un lien vidéo.');
-    await redis('HSET', key, item.id, JSON.stringify(item)); return { item };
+    await redis('HSET', key, item.id, JSON.stringify(item));
+    if (col === 'actus') { // l'actualité apparaît aussi dans la Messagerie (« Quoi de neuf »)
+      const isNew = !b.id; const fid = 'actu-' + item.id; const prevP = await redis('HGET', 'cse:feed', fid);
+      if (isNew || prevP) {
+        const p = prevP ? JSON.parse(prevP) : { id: fid, uid: 'admin', by: 'Section CGT', elu: true, service: '', text: '', at: new Date().toISOString() };
+        p.actu = { id: item.id, titre: item.titre || 'Actualité', cat: item.cat || '', resume: String(item.contenu || '').replace(/\s+/g, ' ').slice(0, 260) };
+        if (item.fileId && /^image\//.test(item.fileType || '')) Object.assign(p.actu, { img: item.fileId, imgName: item.fileName || 'image' }); else delete p.actu.img;
+        await redis('HSET', 'cse:feed', fid, JSON.stringify(p)); await bumpFeed();
+        if (isNew) await notify({ to: 'all', except: u0.id, pref: 'global', title: '📰 Nouvelle actualité', body: item.titre || '', url: '/#/actualites/' + encodeURIComponent(item.id), tag: 'actu' });
+      }
+    }
+    return { item };
   },
 
   async chat(req) {
@@ -681,6 +693,13 @@ const A = {
     const u = await need(req);
     if (req.method === 'GET') {
       if (req.query.v) return { v: Number(await redis('GET', 'cse:fver') || 0) };
+      if (await redis('SET', 'cse:actusync', '1', 'NX')) { // une seule fois : les dernières actualités déjà publiées entrent dans la Messagerie
+        try { const af = (await redis('HGETALL', 'cse:actus')) || []; const al = []; for (let i = 1; i < af.length; i += 2) { try { al.push(JSON.parse(af[i])); } catch {} }
+          al.sort((x, y) => String(y.created || '').localeCompare(String(x.created || '')));
+          for (const it of al.slice(0, 10)) { const p = { id: 'actu-' + it.id, uid: 'admin', by: 'Section CGT', elu: true, service: '', text: '', at: it.created || new Date().toISOString(), actu: { id: it.id, titre: it.titre || 'Actualité', cat: it.cat || '', resume: String(it.contenu || '').replace(/\s+/g, ' ').slice(0, 260) } };
+            if (it.fileId && /^image\//.test(it.fileType || '')) Object.assign(p.actu, { img: it.fileId, imgName: it.fileName || 'image' });
+            await redis('HSET', 'cse:feed', p.id, JSON.stringify(p)); } } catch {}
+      }
       const [f, v] = await Promise.all([redis('HGETALL', 'cse:feed'), redis('GET', 'cse:fver')]); const items = [];
       for (let i = 1; i < (f || []).length; i += 2) { try { items.push(JSON.parse(f[i])); } catch {} }
       items.sort((a, b) => String(b.at).localeCompare(String(a.at)));

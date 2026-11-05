@@ -1510,6 +1510,15 @@ body.wizzing,#chat-panel.wizzing{animation:wizzBig .95s cubic-bezier(.36,.07,.19
 .wk-card.wk-wizz small{color:#fff;font-weight:900}
 .grp-bubble .wizz-line{font-weight:900;letter-spacing:.02em}
 @media (prefers-reduced-motion:reduce){body.wizzing,#chat-panel.wizzing{animation:none}}
+/* Actualité relayée dans la Messagerie */
+.post-actu{display:block;margin:10px 0 4px;border:1.5px solid #F3B9D6;border-radius:14px;overflow:hidden;background:linear-gradient(180deg,#fff,#FFF3F8);color:inherit;text-decoration:none}
+.post-actu .pa-tag{display:block;padding:7px 12px;font-size:12px;font-weight:800;color:#fff;background:linear-gradient(90deg,#E30613,#E6007E)}
+.post-actu img{display:block;width:100%;max-height:240px;object-fit:cover}
+.post-actu .pa-body{display:block;padding:10px 12px 12px}
+.post-actu strong{display:block;font-size:16px;line-height:1.25;margin-bottom:4px}
+.post-actu small{display:block;font-size:13.5px;line-height:1.4;color:#5b4660}
+.post-actu .pa-go{display:inline-block;margin-top:8px;font-weight:800;color:#E30613;font-size:14px}
+.post-actu small{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 
 </style>
 </head>
@@ -3117,7 +3126,7 @@ const isElu = () => Store.isAdmin();
 function chatMount() {
   if ($('#chat-fab')) return;
   document.body.insertAdjacentHTML('beforeend', `
-    <button class="chat-fab" id="chat-fab" aria-label="Ouvrir la messagerie" hidden>${icon('chat')}<span class="chat-badge" id="chat-badge" hidden>0</span></button>
+    <button class="chat-fab" id="chat-fab" aria-label="Aller à la messagerie" hidden>${icon('chat')}<span class="chat-badge" id="chat-badge" hidden>0</span></button>
     <div class="chat-panel" id="chat-panel" role="dialog" aria-label="Messagerie" hidden>
       <header class="chat-head">
         <button class="icon-btn chat-back" id="chat-back" aria-label="Retour" hidden>${icon('chevron-left')}</button>
@@ -3137,7 +3146,12 @@ function chatMount() {
         <button class="chat-send" type="submit" aria-label="Envoyer">${icon('send')}</button>
       </form>
     </div>`);
-  $('#chat-fab').onclick = () => (Chat.open ? chatClose() : chatOpen());
+  $('#chat-fab').onclick = () => { // la bulle mène à la Messagerie ; s'il y a une réponse privée non lue, elle ouvre directement cette conversation
+    if (Chat.open) return chatClose();
+    if (Chat.unread > 0) return chatOpen();
+    if (location.hash === '#/communaute') { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    location.hash = '#/communaute';
+  };
   $('#chat-close').onclick = chatClose;
   $('#chat-back').onclick = () => { Chat.mode = 'inbox'; chatShow(); };
   $('#chat-del').onclick = async () => { if (!confirm('Supprimer toute cette conversation ?')) return; try { await Store.call('chat', { method: 'POST', query: '&op=delete&uid=' + encodeURIComponent(Chat.uid) }); toast('Conversation supprimée.'); Chat.mode = 'inbox'; chatShow(); } catch (e) { toast(e.message); } };
@@ -3356,6 +3370,7 @@ function postHtml(p) {
       <div><strong>${esc(p.by)}</strong>${p.elu ? ' <span class="badge-cgt">Responsable CGT</span>' : ''}<small>${[p.service, timeAgo(p.at), p.edited ? 'modifié' : ''].filter(Boolean).map(esc).join(' · ')}</small></div>
       ${p.uid === me.id ? `<button type="button" class="icon-btn" data-post-edit="${esc(p.id)}" aria-label="Modifier la publication" title="Modifier">${icon('edit')}</button>` : ''}${canDel ? `<button type="button" class="icon-btn" data-post-del="${esc(p.id)}" aria-label="Supprimer la publication" title="Supprimer">${icon('trash')}</button>` : ''}</header>
     ${p.text ? hlMentions(longText(p.text, { chars: 420, lines: 8, cls: 'post-text' }), p.mentions, p.all) : ''}
+    ${p.actu ? `<a class="post-actu" href="#/actualites/${encodeURIComponent(p.actu.id)}"><span class="pa-tag">📰 Nouvelle actualité${p.actu.cat ? ' · ' + esc(p.actu.cat) : ''}</span>${p.actu.img ? `<img src="${Store.link(p.actu.img, p.actu.imgName)}" alt="" loading="lazy">` : ''}<span class="pa-body"><strong>${esc(p.actu.titre)}</strong>${p.actu.resume ? `<small>${esc(p.actu.resume)}${p.actu.resume.length >= 260 ? '…' : ''}</small>` : ''}<span class="pa-go">Lire l’actualité →</span></span></a>` : ''}
     ${img ? (/^video\//.test(p.fileType || '') ? `<div class="post-img"><video src="${img}" controls playsinline preload="metadata"></video></div>` : /^image\//.test(p.fileType || '') ? `<a class="post-img" href="${img}" target="_blank" rel="noopener"><img src="${img}" alt="${p.gif ? 'GIF' : ''}" loading="lazy"></a>${p.gif ? '<span class="giphy-mark">GIPHY</span>' : ''}` : `<div class="post-att">${attHtml(p)}</div>`) : ''}
     ${socialBar('feed:' + p.id, { comments: true })}
   </article>`;
