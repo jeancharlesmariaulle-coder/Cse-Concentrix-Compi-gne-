@@ -1310,6 +1310,29 @@ body:has(#install-banner:not([hidden])) .notif-banner{bottom:100px}
 .bub-att img,.bub-att video{max-width:100%;max-height:260px;border-radius:10px;display:block}
 .bubble.me .file-chip{border-color:rgba(255,255,255,.5)}
 .file-chip,.file-chip .fc-name{color:#0E1A33!important}.file-chip .fc-name small{color:#6B7488!important}
+/* Bibliothèque de GIF + bouton Fichier */
+.att-file{font-size:19px}
+.gif-btn{font-weight:900;font-size:12px;letter-spacing:.02em;color:#E6007E;border:2px solid #F3B9D6;border-radius:8px;width:auto;padding:0 7px;height:30px;align-self:center;background:#fff}
+.gif-btn-txt{font-weight:900;color:#E6007E}
+.chat-gif{height:28px;font-size:11px}
+.gp-search{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line);border-radius:12px;padding:0 12px;background:#fff}
+.gp-search input{border:0;outline:0;flex:1;padding:12px 0;font:inherit;min-width:0}
+.gp-search svg{width:18px;height:18px;color:var(--muted)}
+.gp-chips{display:flex;gap:6px;overflow-x:auto;padding:10px 0;scrollbar-width:none}
+.gp-chips .chip{flex-shrink:0;padding:6px 12px;font-size:12.5px}
+.gp-grid{columns:2;column-gap:6px;max-height:55vh;overflow:auto;border-radius:10px}
+.gp-item{display:block;width:100%;border:0;padding:0;margin:0 0 6px;border-radius:8px;overflow:hidden;background:#F5F6FA;cursor:pointer;break-inside:avoid}
+.gp-item img{width:100%;height:100%;object-fit:cover;display:block}
+.gp-wait{column-span:all;text-align:center;padding:20px}
+.gp-off{column-span:all;text-align:center;padding:18px;background:#FCE4F0;border-radius:10px}
+.gp-by{text-align:right;font-size:11px;color:var(--muted);margin:8px 0 0}
+.giphy-mark{display:block;font-size:9px;font-weight:800;letter-spacing:.08em;opacity:.6;margin-top:2px}
+.post-photo.is-doc{display:flex;align-items:center;padding:10px 40px 10px 12px;min-height:0}
+.post-photo.is-doc img{display:none}
+.post-photo.is-doc::before{content:attr(data-name);font-weight:700;font-size:13.5px;overflow-wrap:anywhere}
+.post-att{margin:8px 0}
+.grp-bubble audio,.bub-att audio,.post-att audio{width:100%;max-width:280px;display:block}
+@media (min-width:721px){.gp-grid{columns:3}}
 
 </style>
 </head>
@@ -2929,7 +2952,9 @@ function chatMount() {
       <div class="chat-body" id="chat-body"></div>
       <div class="chat-att" id="chat-att" hidden></div>
       <form class="chat-input" id="chat-form">
-        <label class="icon-btn chat-clip" title="Joindre une photo, une vidéo ou un fichier" aria-label="Joindre une photo, une vidéo ou un fichier"><input type="file" id="chat-file" accept="image/*,video/*,${DOC_ACCEPT}" hidden>📎</label>
+        <label class="icon-btn chat-clip" title="Photo / vidéo" aria-label="Joindre une photo ou une vidéo"><input type="file" id="chat-photo" accept="image/*,video/*" hidden>${icon('image')}</label>
+        <label class="icon-btn chat-clip" title="Fichier (document, PDF, audio…)" aria-label="Joindre un fichier"><input type="file" id="chat-file" accept="${DOC_ACCEPT}" hidden>📎</label>
+        <button type="button" class="icon-btn gif-btn chat-gif" data-gif-pick="chat" title="GIF" aria-label="Choisir un GIF">GIF</button>
         <textarea id="chat-text" rows="1" placeholder="Écrivez votre message…" maxlength="2000" aria-label="Votre message"></textarea>
         <button class="chat-send" type="submit" aria-label="Envoyer">${icon('send')}</button>
       </form>
@@ -2945,6 +2970,7 @@ function chatMount() {
   const drawAtt = pct => { att.hidden = !chatFile; if (!chatFile) { att.innerHTML = ''; return; }
     att.innerHTML = `<span class="ca-ico">${chatFile.type.startsWith('image/') ? '📷' : chatFile.type.startsWith('video/') ? '🎬' : '📎'}</span><span class="ca-name">${esc(chatFile.name)}<small>${fmtSize(chatFile.size)}${pct != null ? ' · envoi ' + pct + ' %' : ''}</small></span><button type="button" class="icon-btn" id="chat-att-x" aria-label="Retirer">${icon('x')}</button>`;
     $('#chat-att-x').onclick = () => { chatFile = null; drawAtt(); }; };
+  $('#chat-photo').onchange = e => $('#chat-file').onchange(e);
   $('#chat-file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; if (f.size > (isDocFile(f) ? 50 : 300) * 1024 * 1024) { toast('Fichier trop lourd.'); return; } chatFile = f; drawAtt(); ta.focus(); };
   $('#chat-form').onsubmit = async e => { e.preventDefault(); const t = ta.value.trim(); if ((!t && !chatFile) || Chat.busy) return; Chat.busy = true;
     try {
@@ -3148,7 +3174,7 @@ function postHtml(p) {
       <div><strong>${esc(p.by)}</strong>${p.elu ? ' <span class="badge-cgt">Responsable CGT</span>' : ''}<small>${[p.service, timeAgo(p.at), p.edited ? 'modifié' : ''].filter(Boolean).map(esc).join(' · ')}</small></div>
       ${p.uid === me.id ? `<button type="button" class="icon-btn" data-post-edit="${esc(p.id)}" aria-label="Modifier la publication" title="Modifier">${icon('edit')}</button>` : ''}${canDel ? `<button type="button" class="icon-btn" data-post-del="${esc(p.id)}" aria-label="Supprimer la publication" title="Supprimer">${icon('trash')}</button>` : ''}</header>
     ${p.text ? hlMentions(longText(p.text, { chars: 420, lines: 8, cls: 'post-text' }), p.mentions, p.all) : ''}
-    ${img ? (/^video\//.test(p.fileType || '') ? `<div class="post-img"><video src="${img}" controls playsinline preload="metadata"></video></div>` : `<a class="post-img" href="${img}" target="_blank" rel="noopener"><img src="${img}" alt="" loading="lazy"></a>`) : ''}
+    ${img ? (/^video\//.test(p.fileType || '') ? `<div class="post-img"><video src="${img}" controls playsinline preload="metadata"></video></div>` : /^image\//.test(p.fileType || '') ? `<a class="post-img" href="${img}" target="_blank" rel="noopener"><img src="${img}" alt="${p.gif ? 'GIF' : ''}" loading="lazy"></a>${p.gif ? '<span class="giphy-mark">GIPHY</span>' : ''}` : `<div class="post-att">${attHtml(p)}</div>`) : ''}
     ${socialBar('feed:' + p.id, { comments: true })}
   </article>`;
 }
@@ -3200,7 +3226,7 @@ Object.assign(Views, {
           <div class="post-box-top"><span class="avatar initials sm ${me.role === 'elu' ? 'elu' : ''}">${esc(initialsOf(fullName(me)))}</span>
           <textarea id="post-text" rows="2" maxlength="3000" placeholder="Quoi de neuf${me.id === 'admin' || !me.prenom ? '' : ', ' + esc(me.prenom)} ? Partagez avec les collègues…"></textarea></div>
           <div class="post-photo" id="post-photo" hidden><img alt=""><button type="button" class="icon-btn" id="post-photo-x" aria-label="Retirer la photo">${icon('x')}</button></div>
-          <div class="post-box-bar"><label class="btn btn-light btn-sm"><input type="file" accept="image/*,video/*" id="post-file" hidden>${icon('image')}Photo / vidéo / GIF</label><button type="button" class="btn btn-light btn-sm" data-gif-make="feed">✨ Créer un GIF</button>
+          <div class="post-box-bar"><label class="btn btn-light btn-sm"><input type="file" accept="image/*,video/*" id="post-file" hidden>${icon('image')}Photo / vidéo</label><label class="btn btn-light btn-sm"><input type="file" accept="${DOC_ACCEPT}" id="post-doc" hidden>📎 Fichier</label><button type="button" class="btn btn-light btn-sm gif-btn-txt" data-gif-pick="feed">GIF</button>
             <button class="btn btn-red btn-sm" type="submit" id="post-go">${icon('send')}Publier</button></div>
         </form>
         <p class="note feed-rules">Restez courtois·e : pas d'attaques personnelles ni d'informations confidentielles. Les responsables CGT peuvent retirer une publication.</p>
@@ -3213,14 +3239,16 @@ Object.assign(Views, {
     if (!$('#post-form')) return;
     feedList(); reloadOpenComments(); Feed.lastAct = Date.now(); feedTick(); mentionAttach($('#post-text'), false);
     const pv = $('#post-photo');
-    $('#post-file').onchange = e => { const fl = e.target.files[0]; e.target.value = ''; if (!fl) return; Feed.photoFile = fl; Feed.photo = true; const u = URL.createObjectURL(fl);
-      pv.querySelector('img').src = fl.type.startsWith('video/') ? '' : u; pv.classList.toggle('is-vid', fl.type.startsWith('video/')); pv.dataset.name = fl.name; pv.hidden = false; };
-    $('#post-photo-x').onclick = () => { Feed.photo = null; pv.hidden = true; };
+    $('#post-file').onchange = e => { const fl = e.target.files[0]; e.target.value = ''; if (!fl) return; Feed.photoFile = fl; Feed.gif = null; Feed.photo = true; const u = URL.createObjectURL(fl);
+      pv.querySelector('img').src = fl.type.startsWith('video/') ? '' : u; pv.classList.toggle('is-vid', fl.type.startsWith('video/')); pv.classList.remove('is-doc'); pv.dataset.name = fl.name; pv.hidden = false; };
+    $('#post-doc').onchange = e => { const fl = e.target.files[0]; e.target.value = ''; if (!fl) return; Feed.photoFile = fl; Feed.gif = null; Feed.photo = true;
+      pv.querySelector('img').removeAttribute('src'); pv.classList.remove('is-vid'); pv.classList.add('is-doc'); pv.dataset.name = '📎 ' + fl.name; pv.hidden = false; };
+    $('#post-photo-x').onclick = () => { Feed.photo = null; Feed.photoFile = null; Feed.gif = null; pv.hidden = true; };
     $('#post-form').onsubmit = async e => {
       e.preventDefault(); const ta = $('#post-text'), text = ta.value.trim();
       if (!text && !Feed.photo) { ta.focus(); return; }
       const b = $('#post-go'); b.disabled = true;
-      try { const file = Feed.photoFile ? await mediaPrepare(Feed.photoFile, pc => { b.textContent = pc + ' %'; }) : null; await Store.call('feed', { method: 'POST', body: { text, file, mentions: mentionIds(ta, text) } }); Feed.photoFile = null; ta._mentions = new Map(); ta.value = ''; ta.style.height = 'auto'; Feed.photo = null; pv.hidden = true; await feedFetch(); feedList(); toast('Publié !'); }
+      try { const file = Feed.gif ? { gif: Feed.gif } : Feed.photoFile ? await mediaPrepare(Feed.photoFile, pc => { b.textContent = pc + ' %'; }) : null; Feed.gif = null; await Store.call('feed', { method: 'POST', body: { text, file, mentions: mentionIds(ta, text) } }); Feed.photoFile = null; ta._mentions = new Map(); ta.value = ''; ta.style.height = 'auto'; Feed.photo = null; pv.hidden = true; await feedFetch(); feedList(); toast('Publié !'); }
       catch (x) { toast(x.message); } finally { b.disabled = false; }
     };
   },
@@ -3346,9 +3374,10 @@ function groupView(room = '') {
         <div class="grp-list" id="grp-list" aria-live="polite"><p class="note" style="text-align:center;padding:30px">Chargement…</p></div>
         <div class="grp-file" id="grp-file" hidden><span id="grp-file-prev"></span><button type="button" class="icon-btn" id="grp-file-x" aria-label="Retirer le fichier">${icon('x')}</button></div>
         <form class="grp-form" id="grp-form">
-          <label class="icon-btn grp-attach" title="Photo, vidéo, GIF ou fichier" aria-label="Ajouter une photo, une vidéo, un GIF ou un fichier"><input type="file" id="grp-input" accept="image/*,video/*,${DOC_ACCEPT}" multiple hidden>${icon('image')}</label>
-          <button type="button" class="icon-btn gif-btn" data-gif-make="grp" title="Créer un GIF" aria-label="Créer un GIF animé">GIF</button>
-          <textarea id="grp-text" rows="1" maxlength="2000" placeholder="${elus ? 'Écrire aux élu·e·s… (@ pour citer)' : 'Écrire à tout le monde… (@ pour citer)'}" aria-label="Écrire au groupe"></textarea>
+          <label class="icon-btn grp-attach" title="Photos / vidéos" aria-label="Ajouter des photos ou des vidéos"><input type="file" id="grp-input" accept="image/*,video/*" multiple hidden>${icon('image')}</label>
+          <label class="icon-btn grp-attach att-file" title="Fichier (document, PDF, audio…)" aria-label="Joindre un fichier"><input type="file" id="grp-doc" accept="${DOC_ACCEPT}" multiple hidden>📎</label>
+          <button type="button" class="icon-btn gif-btn" data-gif-pick="grp" title="GIF" aria-label="Choisir un GIF">GIF</button>
+          <textarea id="grp-text" rows="1" maxlength="2000" placeholder="${elus ? 'Message aux élu·e·s… (@)' : 'Message… (@ pour citer)'}" aria-label="Écrire au groupe"></textarea>
           <button class="icon-btn send" id="grp-send" aria-label="Envoyer">${icon('send')}</button>
         </form>
       </section>
@@ -3375,6 +3404,7 @@ async function groupAfter() {
     for (const f of list.filter(f => f.size <= 300 * 1024 * 1024).slice(0, 20)) Group.files.push({ f, u: URL.createObjectURL(f) });
     drawFiles(); ta.focus();
   };
+  $('#grp-doc').onchange = e => { const inp = $('#grp-input'); const dt = new DataTransfer(); [...e.target.files].forEach(f => dt.items.add(f)); e.target.value = ''; inp.files = dt.files; inp.dispatchEvent(new Event('change')); };
   $('#grp-file-prev').onclick = e => { const x = e.target.closest('[data-gf-x]'); if (x) { Group.files.splice(Number(x.dataset.gfX), 1); drawFiles(); } };
   $('#grp-file-x').onclick = () => { Group.files = []; drawFiles(); };
   $('#grp-form').onsubmit = async e => {
@@ -3966,103 +3996,6 @@ document.addEventListener('click', async e => {
     inlineEdit(p, p.textContent, async text => { await Store.call('social', { method: 'POST', query: '&op=editcomment', body: { t, id, text } }); await loadComments(t); }); }
 });
 
-/* =========================================================================
-   Créateur de GIF animé (dans le navigateur, sans service extérieur) :
-   2 à 15 photos → GIF qui tourne en boucle, vitesse réglable, texte facultatif.
-   ========================================================================= */
-const GIF_PAL = (() => { const p = []; for (let r = 0; r < 6; r++) for (let g = 0; g < 7; g++) for (let b = 0; b < 6; b++) p.push([Math.round(r * 51), Math.round(g * 42.5), Math.round(b * 51)]); while (p.length < 256) p.push([255, 255, 255]); return p; })();
-function gifQuantize(rgba, w, h) { // palette 6×7×6 + diffusion d'erreur (Floyd-Steinberg)
-  const out = new Uint8Array(w * h), e = new Float32Array(w * h * 3);
-  for (let i = 0; i < w * h; i++) { e[i * 3] = rgba[i * 4]; e[i * 3 + 1] = rgba[i * 4 + 1]; e[i * 3 + 2] = rgba[i * 4 + 2]; }
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = y * w + x, r = Math.max(0, Math.min(255, e[i * 3])), g = Math.max(0, Math.min(255, e[i * 3 + 1])), b = Math.max(0, Math.min(255, e[i * 3 + 2]));
-    const ri = Math.round(r / 51), gi = Math.round(g / 42.5), bi = Math.round(b / 51), k = ri * 42 + gi * 6 + bi; out[i] = k;
-    const c = GIF_PAL[k], er = r - c[0], eg = g - c[1], eb = b - c[2];
-    const add = (xx, yy, f) => { if (xx < 0 || xx >= w || yy >= h) return; const j = (yy * w + xx) * 3; e[j] += er * f; e[j + 1] += eg * f; e[j + 2] += eb * f; };
-    add(x + 1, y, 7 / 16); add(x - 1, y + 1, 3 / 16); add(x, y + 1, 5 / 16); add(x + 1, y + 1, 1 / 16);
-  }
-  return out;
-}
-function gifLzw(px, out) {
-  const min = 8, clear = 256, eoi = 257; out.push(min);
-  let size = 9, next = 258, dict = new Map(), acc = 0, bits = 0; const buf = [];
-  const emit = c => { acc |= c << bits; bits += size; while (bits >= 8) { buf.push(acc & 255); acc >>>= 8; bits -= 8; } };
-  emit(clear); let pre = px[0];
-  for (let i = 1; i < px.length; i++) {
-    const k = px[i], key = pre * 256 + k, v = dict.get(key);
-    if (v !== undefined) { pre = v; continue; }
-    emit(pre);
-    if (next < 4096) { dict.set(key, next++); if (next > (1 << size) && size < 12) size++; }
-    else { emit(clear); dict = new Map(); size = 9; next = 258; }
-    pre = k;
-  }
-  emit(pre); emit(eoi); if (bits > 0) buf.push(acc & 255);
-  for (let i = 0; i < buf.length; i += 255) { const n = Math.min(255, buf.length - i); out.push(n); for (let j = 0; j < n; j++) out.push(buf[i + j]); }
-  out.push(0);
-}
-function gifEncode(frames, w, h, delayCs) {
-  const o = []; const b = v => o.push(v & 255), w16 = v => { b(v); b(v >> 8); }, str = t => { for (const c of t) b(c.charCodeAt(0)); };
-  str('GIF89a'); w16(w); w16(h); b(0xF7); b(0); b(0);
-  for (const c of GIF_PAL) { b(c[0]); b(c[1]); b(c[2]); }
-  b(0x21); b(0xFF); b(11); str('NETSCAPE2.0'); b(3); b(1); w16(0); b(0); // boucle infinie
-  for (const f of frames) { b(0x21); b(0xF9); b(4); b(0); w16(delayCs); b(0); b(0); b(0x2C); w16(0); w16(0); w16(w); w16(h); b(0); gifLzw(f, o); }
-  b(0x3B); return new Uint8Array(o);
-}
-async function gifBuild(files, { size = 480, delay = 0.6, top = '', bottom = '' } = {}, onProg) {
-  const imgs = []; for (const f of files) { const u = URL.createObjectURL(f); const im = new Image(); im.src = u; await im.decode().catch(() => {}); if (im.naturalWidth) imgs.push(im); }
-  if (imgs.length < 1) throw new Error('Photos illisibles.');
-  const r0 = imgs[0].naturalWidth / imgs[0].naturalHeight; const w = r0 >= 1 ? size : Math.round(size * r0), h = r0 >= 1 ? Math.round(size / r0) : size;
-  const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const cx = cv.getContext('2d', { willReadFrequently: true });
-  const frames = [];
-  for (let k = 0; k < imgs.length; k++) {
-    const im = imgs[k], s = Math.max(w / im.naturalWidth, h / im.naturalHeight); // recadrage « remplir »
-    cx.fillStyle = '#000'; cx.fillRect(0, 0, w, h); cx.drawImage(im, (w - im.naturalWidth * s) / 2, (h - im.naturalHeight * s) / 2, im.naturalWidth * s, im.naturalHeight * s);
-    const txt = (t, y, base) => { if (!t) return; const fs = Math.round(w / Math.max(9, t.length * 0.62)); cx.font = `900 ${Math.min(fs, Math.round(h / 7))}px Impact, 'Arial Black', sans-serif`; cx.textAlign = 'center'; cx.textBaseline = base;
-      cx.lineWidth = Math.max(3, Math.round(w / 90)); cx.strokeStyle = '#000'; cx.lineJoin = 'round'; cx.strokeText(t.toUpperCase(), w / 2, y); cx.fillStyle = '#fff'; cx.fillText(t.toUpperCase(), w / 2, y); };
-    txt(top, Math.round(h * 0.04), 'top'); txt(bottom, Math.round(h * 0.96), 'bottom');
-    frames.push(gifQuantize(cx.getImageData(0, 0, w, h).data, w, h)); onProg && onProg(Math.round((k + 1) / imgs.length * 90));
-    await new Promise(r => setTimeout(r, 0));
-  }
-  const bytes = gifEncode(frames, w, h, Math.round(delay * 100)); onProg && onProg(100);
-  return new File([bytes], `gif-${Date.now().toString(36)}.gif`, { type: 'image/gif' });
-}
-const GIFM = { files: [], out: null, target: 'grp' };
-function gifModal(target) {
-  GIFM.files = []; GIFM.out = null; GIFM.target = target;
-  $('#modal-title').textContent = '✨ Créer un GIF animé';
-  $('#modal-body').innerHTML = `<div class="gif-make">
-    <label class="up-drop" for="gif-files">${icon('image')}<span><strong>Choisir 2 à 15 photos</strong><small>Elles défileront en boucle, dans l'ordre choisi</small></span></label>
-    <input id="gif-files" type="file" accept="image/*" multiple hidden><div class="up-grid" id="gif-prev"></div>
-    <div class="row-2"><div class="field"><label for="gif-top">Texte en haut <span class="hint">(facultatif)</span></label><input id="gif-top" maxlength="40" placeholder="Ex : TOUS ENSEMBLE"></div>
-    <div class="field"><label for="gif-bot">Texte en bas <span class="hint">(facultatif)</span></label><input id="gif-bot" maxlength="40" placeholder="Ex : ON LÂCHE RIEN"></div></div>
-    <div class="field"><label for="gif-speed">Vitesse : <b id="gif-speed-v">0,6 s</b> par image</label><input id="gif-speed" type="range" min="0.15" max="2" step="0.05" value="0.6"></div>
-    <div id="gif-result"></div>
-    <button type="button" class="btn btn-red" id="gif-go" style="width:100%;justify-content:center" disabled>✨ Créer le GIF</button></div>`;
-  $('#modal-form').onsubmit = e => e.preventDefault();
-  const draw = () => { $('#gif-prev').innerHTML = GIFM.files.map((f, k) => `<div class="up-item"><img src="${URL.createObjectURL(f)}" alt=""><span class="gif-n">${k + 1}</span><button type="button" class="up-x" data-gif-x="${k}" aria-label="Retirer">×</button></div>`).join('')
-    + (GIFM.files.length ? `<p class="up-count">${GIFM.files.length} photo${GIFM.files.length > 1 ? 's' : ''} · <label for="gif-files" class="text-link">en ajouter</label></p>` : ''); $('#gif-go').disabled = GIFM.files.length < 2; };
-  $('#gif-files').onchange = e => { GIFM.files.push(...[...e.target.files].filter(f => f.type.startsWith('image/'))); GIFM.files = GIFM.files.slice(0, 15); e.target.value = ''; draw(); };
-  $('#gif-prev').onclick = e => { const x = e.target.closest('[data-gif-x]'); if (x) { GIFM.files.splice(Number(x.dataset.gifX), 1); draw(); } };
-  $('#gif-speed').oninput = e => { $('#gif-speed-v').textContent = String(Number(e.target.value).toFixed(2)).replace(/0$/, '').replace('.', ',') + ' s'; };
-  $('#gif-go').onclick = async () => {
-    const b = $('#gif-go'); b.disabled = true;
-    try {
-      const f = await gifBuild(GIFM.files, { delay: Number($('#gif-speed').value), top: $('#gif-top').value.trim(), bottom: $('#gif-bot').value.trim() }, pc => { b.textContent = `Création… ${pc} %`; });
-      GIFM.out = f; const u = URL.createObjectURL(f);
-      $('#gif-result').innerHTML = `<div class="gif-out"><img src="${u}" alt="Aperçu du GIF"><small>${(f.size / 1048576).toFixed(1).replace('.', ',')} Mo</small>
-        <div class="gif-out-btns"><button type="button" class="btn btn-red" id="gif-use">${icon('send')}${GIFM.target === 'feed' ? 'Ajouter à ma publication' : 'Ajouter au message'}</button><a class="btn btn-light" href="${u}" download="${f.name}">${icon('download')}Télécharger</a></div></div>`;
-      $('#gif-use').onclick = () => gifUse(f); b.textContent = '↻ Recréer avec ces réglages';
-    } catch (x) { toast(x.message); b.textContent = '✨ Créer le GIF'; }
-    finally { b.disabled = GIFM.files.length < 2; }
-  };
-  if (!$('#modal').open) $('#modal').showModal();
-}
-function gifUse(f) {
-  $('#modal').close();
-  if (GIFM.target === 'feed') { const pv = $('#post-photo'); if (!pv) return; Feed.photoFile = f; Feed.photo = true; pv.querySelector('img').src = URL.createObjectURL(f); pv.classList.remove('is-vid'); pv.hidden = false; $('#post-text')?.focus(); return; }
-  const inp = $('#grp-input'); if (!inp) return; const dt = new DataTransfer(); dt.items.add(f); inp.files = dt.files; inp.dispatchEvent(new Event('change'));
-}
-document.addEventListener('click', e => { const g = e.target.closest('[data-gif-make]'); if (g) { e.preventDefault(); gifModal(g.dataset.gifMake); } });
 function notifAsk() {
   $('#modal-title').textContent = '🔔 Restez informé·e';
   $('#modal-body').innerHTML = `<div class="notif-ask"><div class="na-ico">🔔</div>
@@ -4077,16 +4010,59 @@ function notifAsk() {
 }
 
 /* Pièces jointes : photo, vidéo ou document (PDF, Word, Excel…) */
-const DOC_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.txt,.csv,.zip';
-const isDocFile = f => !/^(image|video)\//.test(f.type || '') && /\.(pdf|docx?|xlsx?|pptx?|od[tsp]|txt|csv|zip)$/i.test(f.name || '');
+const DOC_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.txt,.csv,.zip,.mp3,.m4a,.aac,.ogg,.wav,audio/*';
+const isDocFile = f => !/^(image|video)\//.test(f.type || '') && (/^audio\//.test(f.type || '') || /\.(pdf|docx?|xlsx?|pptx?|od[tsp]|txt|csv|zip|mp3|m4a|aac|ogg|wav)$/i.test(f.name || ''));
 const docExt = n => (String(n || '').split('.').pop() || 'doc').slice(0, 4).toUpperCase();
 function attHtml(m) {
   if (!m || !m.fileId) return '';
   const url = Store.link(m.fileId, m.fileName), t = m.fileType || '';
   if (/^video\//.test(t)) return `<video src="${url}" controls playsinline preload="metadata"></video>`;
-  if (/^image\//.test(t)) return `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="" loading="lazy"></a>`;
+  if (/^image\//.test(t)) return `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${m.gif ? 'GIF' : ''}" loading="lazy"></a>${m.gif ? '<span class="giphy-mark">GIPHY</span>' : ''}`;
+  if (/^audio\//.test(t)) return `<audio src="${url}" controls preload="metadata"></audio><a class="text-link" href="${url}" download="${esc(m.fileName || '')}" style="font-size:12px">${esc(m.fileName || 'Audio')}</a>`;
   return `<a class="file-chip" href="${url}" target="_blank" rel="noopener" download="${esc(m.fileName || '')}"><span class="fc-ext">${esc(docExt(m.fileName))}</span><span class="fc-name">${esc(m.fileName || 'Fichier')}<small>${m.fileSize ? fmtSize(m.fileSize) + ' · ' : ''}Ouvrir / télécharger</small></span></a>`;
 }
+
+/* =========================================================================
+   Bibliothèque de GIF (GIPHY) : recherche en français, tendances par défaut.
+   Le serveur garde les résultats 1 h pour rester sous la limite gratuite.
+   ========================================================================= */
+const GIFP = { target: '', q: '', items: [], timer: null };
+async function gifLoad(q) {
+  const box = $('#gp-grid'); if (!box) return;
+  box.innerHTML = '<p class="note gp-wait">Chargement…</p>';
+  try {
+    const r = await Store.call('gif', { query: q ? '&q=' + encodeURIComponent(q) : '' });
+    if (!r.enabled) { box.innerHTML = `<div class="gp-off"><p><strong>La bibliothèque de GIF n'est pas encore activée.</strong></p><p class="note">${Store.isAdmin() ? 'Il manque la clé GIPHY dans les réglages Vercel (GIPHY_API_KEY).' : 'Elle sera bientôt disponible.'}</p></div>`; return; }
+    GIFP.items = r.items;
+    box.innerHTML = r.items.length ? r.items.map((g, k) => `<button type="button" class="gp-item" data-gp="${k}" title="${esc(g.title)}" style="aspect-ratio:${g.w}/${g.h}"><img src="${g.preview}" alt="${esc(g.title)}" loading="lazy"></button>`).join('')
+      : `<p class="note gp-wait">Aucun GIF pour « ${esc(q)} ». Essayez un autre mot.</p>`;
+  } catch (x) { box.innerHTML = `<p class="note gp-wait">${esc(x.message)}</p>`; }
+}
+function gifPicker(target) {
+  GIFP.target = target;
+  $('#modal-title').textContent = 'GIF';
+  $('#modal-body').innerHTML = `<div class="gp"><label class="search gp-search">${icon('search')}<input id="gp-q" type="search" placeholder="Rechercher un GIF (ex. : bravo, grève, merci…)" autocomplete="off" enterkeyhint="search"></label>
+    <div class="gp-chips">${['Bravo', 'Merci', 'Grève', 'Solidarité', 'Bonjour', 'Haha', 'Courage', 'Victoire'].map(w => `<button type="button" class="chip" data-gp-q="${w}">${w}</button>`).join('')}</div>
+    <div class="gp-grid" id="gp-grid"></div><p class="gp-by">Powered by <strong>GIPHY</strong></p></div>`;
+  $('#modal-form').onsubmit = e => e.preventDefault();
+  const qi = $('#gp-q'); qi.oninput = () => { clearTimeout(GIFP.timer); GIFP.timer = setTimeout(() => gifLoad(qi.value.trim()), 450); };
+  if (!$('#modal').open) $('#modal').showModal();
+  gifLoad('');
+}
+async function gifSend(g) {
+  $('#modal').close();
+  const file = { gif: g.url };
+  try {
+    if (GIFP.target === 'grp') { await Store.call('group', { method: 'POST', query: grpQ(), body: { text: '', file } }); await grpLoad(false); grpRender(true); Group.lastAct = Date.now(); grpTick(); }
+    else if (GIFP.target === 'chat') { const body = { text: '', file }; if (Chat.mode === 'thread') body.to = Chat.uid; const r = await Store.call('chat', { method: 'POST', query: '&op=send', body }); chatAdd([r.msg]); Chat.n = Math.max(Chat.n, r.n); Chat.lastAct = Date.now(); }
+    else if (GIFP.target === 'feed') { Feed.gif = g.url; Feed.photoFile = null; Feed.photo = true; const pv = $('#post-photo'); pv.querySelector('img').src = g.url; pv.classList.remove('is-vid', 'is-doc'); pv.dataset.name = 'GIF'; pv.hidden = false; $('#post-text')?.focus(); }
+  } catch (x) { toast(x.message); }
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-gif-pick]'); if (b) { e.preventDefault(); gifPicker(b.dataset.gifPick); return; }
+  const c = e.target.closest('[data-gp-q]'); if (c) { $('#gp-q').value = c.dataset.gpQ; gifLoad(c.dataset.gpQ); return; }
+  const it = e.target.closest('[data-gp]'); if (it) { const g = GIFP.items[Number(it.dataset.gp)]; if (g) gifSend(g); }
+});
 
 </script>
 </body>

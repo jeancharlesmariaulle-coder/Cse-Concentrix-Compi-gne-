@@ -23,6 +23,7 @@ const MAX_FILE = 3.2 * 1024 * 1024;
 
 /* ---------- stockage : Upstash Redis si configuré, sinon Vercel Blob ---------- */
 const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+const GIPHY_KEY = process.env.GIPHY_API_KEY || '';
 const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || '', VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:cgtwebhelpcompiegne@gmail.com';
 const storageReady = () => Boolean((REDIS_URL && REDIS_TOKEN) || BLOB_TOKEN);
@@ -242,7 +243,7 @@ async function socSummary(t) {
    Le serveur ne fait que délivrer une clé d'envoi temporaire ; le fichier ne transite pas par la fonction. */
 const BIG_MAX = 300 * 1024 * 1024; // 300 Mo par photo / vidéo
 const DOC_MAX = 50 * 1024 * 1024;   // 50 Mo par document
-const DOC_RE = /^(application\/(pdf|msword|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)|vnd\.ms-excel|vnd\.ms-powerpoint|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation)|zip|x-zip-compressed)|text\/(plain|csv))$/;
+const DOC_RE = /^(application\/(pdf|msword|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)|vnd\.ms-excel|vnd\.ms-powerpoint|vnd\.oasis\.opendocument\.(text|spreadsheet|presentation)|zip|x-zip-compressed)|text\/(plain|csv)|audio\/(mpeg|mp3|mp4|x-m4a|aac|ogg|wav|x-wav|webm))$/;
 const BLOB_URL_RE = /^https:\/\/[a-z0-9]+\.public\.blob\.vercel-storage\.com\/media\/[\w\/.%-]+$/i;
 function blobRef(f) { // fichier déjà envoyé sur Vercel Blob par le navigateur
   const url = String(f && f.url || '');
@@ -275,7 +276,10 @@ async function dropTarget(t) {
 const GROUP_MAX = 500, GROUP_KEEP = 400;
 async function groupMeta(room = '') { const v = await redis('GET', 'cse:gmeta' + room); return v ? JSON.parse(v) : { n: 0, base: 0, v: 0 }; }
 const isEluCse = u => !!u && (u.type === 'elu' || u.role === 'elu');
+const fileGiven = f => !!(f && (f.data || f.url || f.gif));
+const GIPHY_RE = /^https:\/\/(media\d?|i)\.giphy\.com\/media\/[\w-]+\/[\w.-]+\.(gif|webp|mp4)(\?[\w=&.-]*)?$/;
 async function saveMedia(f) {
+  if (f && f.gif) { const url = String(f.gif); if (!GIPHY_RE.test(url)) throw fail(400, 'GIF invalide.'); return { fileId: url, fileName: 'GIF', fileType: 'image/gif', gif: 1 }; }
   if (f && f.url) return blobRef(f);
   const data = String(f && f.data || '');
   const m = data.match(/^data:([\w.+-]+\/[\w.+-]+);base64,/);
@@ -575,7 +579,7 @@ const A = {
     }
     if (op === 'send') {
       const b = body(req); const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
-      const hasFile = !!(b.file && (b.file.data || b.file.url));
+      const hasFile = fileGiven(b.file);
       if (!text && !hasFile) throw fail(400, 'Message vide.');
       await rateLimit(req, 'chat', 120);
       const att = hasFile ? await saveMedia(b.file) : {}; // photo, vidéo ou document joint
@@ -696,12 +700,12 @@ const A = {
       if (p.all && !/(^|\s)@tous(?![\p{L}\d])/iu.test(text)) delete p.all;
       await redis('HSET', 'cse:feed', p.id, JSON.stringify(p)); await bumpFeed(); return { item: p };
     }
-    if (!text && !(b.file && (b.file.data || b.file.url))) throw fail(400, 'Publication vide.');
+    if (!text && !fileGiven(b.file)) throw fail(400, 'Publication vide.');
     await rateLimit(req, 'post', 15);
     const p = { id: newId(), uid: u.id, by: who(u), elu: u.role === 'elu', service: u.id === 'admin' ? '' : (u.service || ''), text, at: new Date().toISOString() };
     const mentions = (await resolveMentions(b.mentions, text, false)).filter(m => m.id !== u.id); if (mentions.length) p.mentions = mentions;
     const toAll = /(^|\s)@tous(?![\p{L}\d])/iu.test(text) && isEluCse(u); if (toAll) p.all = true;
-    if (b.file && (b.file.data || b.file.url)) Object.assign(p, await saveMedia(b.file));
+    if (fileGiven(b.file)) Object.assign(p, await saveMedia(b.file));
     await redis('HSET', 'cse:feed', p.id, JSON.stringify(p));
     if (mentions.length) await notify({ to: mentions.map(m => m.id), pref: 'mention', title: `📣 ${p.by} vous a mentionné·e`, body: `Messagerie : ${text}`, url: '/#/communaute', tag: 'mention' });
     if (toAll) await notify({ to: 'all', except: u.id, exceptList: mentions.map(m => m.id), pref: 'mention', title: `📢 ${p.by} à tout le monde`, body: `Messagerie : ${text}`, url: '/#/communaute', tag: 'tous' });
@@ -761,12 +765,12 @@ const A = {
       return { ok: true };
     }
     const b = body(req); const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
-    if (!text && !(b.file && (b.file.data || b.file.url))) throw fail(400, 'Message vide.');
+    if (!text && !fileGiven(b.file)) throw fail(400, 'Message vide.');
     await rateLimit(req, 'grp', 120);
     const msg = { uid: u.id, by: who(u), elu: u.role === 'elu', typ: u.type === 'elu' ? 'elu' : '', text, at: new Date().toISOString() };
     const mentions = (await resolveMentions(b.mentions, text, !!room)).filter(m => m.id !== u.id); if (mentions.length) msg.mentions = mentions;
     const toAll = /(^|\s)@tous(?![\p{L}\d])/iu.test(text) && (!!room || isEluCse(u)); if (toAll) msg.all = true;
-    if (b.file && (b.file.data || b.file.url)) Object.assign(msg, await saveMedia(b.file));
+    if (fileGiven(b.file)) Object.assign(msg, await saveMedia(b.file));
     const m = await groupMeta(room); msg.i = m.n;
     const len = Number(await redis('RPUSH', LK, JSON.stringify(msg)));
     m.n = m.base + len;
@@ -785,6 +789,24 @@ const A = {
     else await notify(room ? { to: 'elus', except: u.id, exceptList: ml, pref: 'elus', title: '🗳️ Discussion élus', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/elus', tag: 'grp-elus' }
       : { to: 'all', except: u.id, exceptList: ml, pref: 'global', title: '👥 Discussion globale', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/discussion', tag: 'grp' });
     return { n: m.n, msg };
+  },
+
+  async gif(req) {
+    await need(req);
+    if (!GIPHY_KEY) return { enabled: false, items: [] };
+    const q = String(req.query.q || '').trim().toLowerCase().slice(0, 50); const off = Math.min(Math.max(Number(req.query.offset) || 0, 0), 200);
+    const ck = `cse:gif:${q || '_tendances'}:${off}`;
+    const cached = await redis('GET', ck); if (cached) return { enabled: true, items: JSON.parse(cached) };
+    const u = q ? `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(q)}&limit=24&offset=${off}&rating=pg-13&lang=fr`
+      : `https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_KEY}&limit=24&offset=${off}&rating=pg-13`;
+    const r = await fetch(u, { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) throw fail(502, r.status === 429 ? 'Trop de recherches de GIF pour le moment : réessayez dans quelques minutes.' : 'La bibliothèque de GIF ne répond pas.');
+    const j = await r.json();
+    const items = (j.data || []).map(g => { const im = g.images || {}; const full = im.downsized_medium || im.downsized || im.original || {}; const pv = im.fixed_width_downsampled || im.fixed_width || im.preview_gif || full;
+      return { id: g.id, title: String(g.title || '').slice(0, 80), url: String(full.url || '').split('?')[0], preview: String(pv.url || '').split('?')[0], w: Number(pv.width) || 200, h: Number(pv.height) || 150 }; })
+      .filter(x => GIPHY_RE.test(x.url) && GIPHY_RE.test(x.preview));
+    await redis('SET', ck, JSON.stringify(items), 'EX', 3600);
+    return { enabled: true, items };
   },
 
   async upload(req) {
