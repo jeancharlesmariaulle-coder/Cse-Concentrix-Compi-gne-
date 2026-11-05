@@ -280,6 +280,36 @@ const ADH_FIELDS = ['civilite', 'nom', 'prenom', 'adresse', 'cp', 'ville', 'emai
 const SIG_RE = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/;
 
 /* ---------- actions ---------- */
+
+/* ---------- Billetterie du CSE (catalogue de l'affiche « Offres du CSE ») ----------
+   Prix en centimes. « from » = prix « à partir de » (variable selon les dates). */
+const BILLETS = [
+  { id: 'majestic', cat: 'cinema', emoji: '🎬', nom: 'Cinéma Majestic', lieu: 'Compiègne', public: 12.00, variants: [
+    { id: 'priv', label: 'Place tarif privilégié*', sub: '5 premières places du semestre', prix: 500 }, { id: 'sup', label: 'Place suivante', prix: 730 }] },
+  { id: 'paradisio', cat: 'cinema', emoji: '🍿', nom: 'Cinéma Paradisio', lieu: 'Noyon', public: 9.90, variants: [
+    { id: 'priv', label: 'Place tarif privilégié*', sub: '5 premières places du semestre', prix: 500 }, { id: 'sup', label: 'Place suivante', prix: 660 }] },
+  { id: 'speedpark', cat: 'sorties', emoji: '🎳', nom: 'Speed Park', lieu: 'Bowling, laser, billard, karaoké, karting', variants: [
+    { id: 'ticket', label: 'Ticket 1 activité', prix: 500 }],
+    note: 'Bowling hors location de chaussures. Du lundi au vendredi : 1 ticket par personne. Samedi, dimanche, jours fériés et vacances scolaires : 2 tickets par personne.' },
+  { id: 'ibidem', cat: 'sorties', emoji: '🧖', nom: 'Ibidem', lieu: 'Spa privatisé 2 h', public: 65.00, variants: [
+    { id: 'pers', label: 'Par personne', prix: 4500 }] },
+  { id: 'experimental', cat: 'sorties', emoji: '🎮', nom: 'Experimental Park', lieu: '1 h de jeu, 7j/7', variants: [
+    { id: 'ticket', label: 'Ticket 1 h de jeu', prix: 500 }], note: 'Le samedi, valable uniquement à partir de 17h30.' },
+  { id: 'beauval', cat: 'parcs', emoji: '🦁', nom: 'ZooParc de Beauval', lieu: 'Billet 1 journée', variants: [
+    { id: 'adulte', label: 'Adulte', prix: 3400, public: 40.00 }, { id: 'enfant', label: 'Enfant', prix: 2600, public: 28.00 }] },
+  { id: 'asterix', cat: 'parcs', emoji: '⚔️', nom: 'Parc Astérix', lieu: 'Billet non daté', public: 62.00, from: true, variants: [
+    { id: 'billet', label: 'Billet', prix: 5200 }] },
+  { id: 'futuroscope', cat: 'parcs', emoji: '🚀', nom: 'Futuroscope', lieu: 'Billet', public: 60.00, from: true, variants: [
+    { id: 'billet', label: 'Billet', prix: 5000 }] },
+  { id: 'mersable', cat: 'parcs', emoji: '🏜️', nom: 'La Mer de Sable', lieu: 'Billet', public: 28.00, from: true, variants: [
+    { id: 'billet', label: 'Billet', prix: 2700 }] },
+  { id: 'franceminiature', cat: 'parcs', emoji: '🗼', nom: 'France Miniature', lieu: 'Billet non daté', from: true, variants: [
+    { id: 'billet', label: 'Billet', prix: 2000 }] },
+  { id: 'grevin', cat: 'parcs', emoji: '🗿', nom: 'Musée Grévin', lieu: 'Billet non daté', from: true, variants: [
+    { id: 'billet', label: 'Billet', prix: 1800 }] },
+];
+const BILLET_ST = ['nouvelle', 'prete', 'retiree', 'annulee'];
+
 const A = {
   async health() { let migrated = null; if (REDIS_URL && REDIS_TOKEN) { try { migrated = JSON.parse(await redisHttp(['GET', 'cse:migrated']) || 'null'); } catch {} } return { ok: true, storage: storageReady(), backend: REDIS_URL && REDIS_TOKEN ? 'redis' : BLOB_TOKEN ? 'blob' : 'none', migrated, auth: Boolean(ADMIN_PASSWORD) }; },
 
@@ -580,6 +610,46 @@ const A = {
     }
     await redis('SET', 'cse:gmeta', JSON.stringify(m));
     return { n: m.n, msg };
+  },
+
+  async billet(req) {
+    if (req.method === 'GET' && req.query.catalog) return { items: BILLETS };
+    const u = await need(req);
+    if (req.method === 'POST' && !req.query.id) {
+      await rateLimit(req, 'billet', 15);
+      const b = body(req); const lines = []; let total = 0, n = 0, from = false;
+      for (const l of Array.isArray(b.items) ? b.items.slice(0, 40) : []) {
+        const o = BILLETS.find(x => x.id === l.offre); const v = o && o.variants.find(x => x.id === l.variant);
+        const q = Math.floor(Number(l.qty) || 0); if (!v || q < 1) continue;
+        if (q > 30) throw fail(400, 'Maximum 30 billets par ligne.');
+        lines.push({ offre: o.id, nom: o.nom, emoji: o.emoji, variant: v.id, label: v.label, prix: v.prix, qty: q, from: !!o.from });
+        total += v.prix * q; n += q; from = from || !!o.from;
+      }
+      if (!lines.length) throw fail(400, 'Votre panier est vide.');
+      const it = { id: newId(), num: 'B' + Date.now().toString(36).slice(-5).toUpperCase(), created: new Date().toISOString(), status: 'nouvelle',
+        uid: u.id, nom: clip(b.nom || u.nom, 'nom'), prenom: clip(b.prenom || u.prenom, 'prenom'), email: clip(b.email || u.email, 'email'),
+        telephone: clip(b.telephone, 'telephone'), contrat: clip(b.contrat, 'contrat'), paiement: b.paiement === 'cheque' ? 'cheque' : 'especes',
+        retrait: b.retrait === 'email' ? 'email' : 'cse', date_visite: clip(b.date_visite, 'date'), note: clip(b.note, 'message').slice(0, 1000),
+        lines, total, n, from };
+      if (!it.nom || !it.prenom) throw fail(400, 'Indiquez votre nom et votre prénom.');
+      if (!it.telephone && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(it.email)) throw fail(400, 'Indiquez un téléphone ou un email.');
+      if (!b.engage) throw fail(400, "Merci de confirmer que vous réglerez la commande au CSE.");
+      await redis('HSET', 'cse:billets', it.id, JSON.stringify(it));
+      return { ok: true, item: it };
+    }
+    const all = async () => { const f = (await redis('HGETALL', 'cse:billets')) || []; const o = []; for (let i = 1; i < f.length; i += 2) { try { o.push(JSON.parse(f[i])); } catch {} } return o.sort((a, c) => String(c.created).localeCompare(String(a.created))); };
+    if (req.method === 'GET' && req.query.mine) return { items: (await all()).filter(x => x.uid === u.id).slice(0, 30) };
+    const getIt = async () => { const v = await redis('HGET', 'cse:billets', String(req.query.id || '')); if (!v) throw fail(404, 'Commande introuvable.'); return JSON.parse(v); };
+    if (req.method === 'DELETE') {
+      const it = await getIt();
+      if (u.role !== 'elu' && !(it.uid === u.id && it.status === 'nouvelle')) throw fail(403, 'Cette commande ne peut plus être annulée en ligne. Contactez le CSE.');
+      await redis('HDEL', 'cse:billets', it.id); return { ok: true };
+    }
+    if (u.role !== 'elu') throw fail(403, 'Réservé aux élu·e·s.');
+    if (req.method === 'GET') return { items: await all() };
+    const it = await getIt(); const st = String(body(req).status || '');
+    if (!BILLET_ST.includes(st)) throw fail(400, 'Statut inconnu');
+    it.status = st; it.updated = new Date().toISOString(); await redis('HSET', 'cse:billets', it.id, JSON.stringify(it)); return { ok: true };
   },
 
   async adhesion(req) {
