@@ -1520,6 +1520,26 @@ body.wizzing,#chat-panel.wizzing{animation:wizzBig .95s cubic-bezier(.36,.07,.19
 .post-actu .pa-go{display:inline-block;margin-top:8px;font-weight:800;color:#E30613;font-size:14px}
 .post-actu small{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .info-card.navy h3 svg{color:#FFD200;stroke:#FFD200}
+/* ===== Présence : connecté·e·s en ce moment ===== */
+.online-box:empty{display:none}
+.online-box{margin:10px 0 12px;padding:10px 12px;border-radius:14px;background:#fff;border:1.5px solid #CFEBD8;box-shadow:0 4px 14px rgba(14,26,51,.06)}
+.online-box.in-grp{margin:0;border-radius:0;border-width:0 0 1px;box-shadow:none;background:#F6FCF8}
+.online-head{display:flex;align-items:center;gap:8px;font-size:13.5px;color:#1d3b2a}
+.online-n{margin-left:auto;min-width:24px;padding:1px 8px;border-radius:99px;background:#1FA45A;color:#fff;font-weight:800;font-size:12.5px;text-align:center}
+.on-dot{width:10px;height:10px;border-radius:50%;background:#1FA45A;box-shadow:0 0 0 0 rgba(31,164,90,.6);animation:onPulse 1.8s infinite}
+@keyframes onPulse{0%{box-shadow:0 0 0 0 rgba(31,164,90,.55)}70%{box-shadow:0 0 0 8px rgba(31,164,90,0)}100%{box-shadow:0 0 0 0 rgba(31,164,90,0)}}
+.online-list{display:flex;gap:10px;overflow-x:auto;padding:8px 2px 2px;scrollbar-width:none;flex-wrap:nowrap}
+.online-list::-webkit-scrollbar{display:none}
+.online-p{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:46px;max-width:58px}
+.online-p .avatar{position:relative;width:36px;height:36px;font-size:13px}
+.online-p .avatar i,.avatar.is-on::after{content:'';position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:50%;background:#1FA45A;border:2px solid #fff}
+.online-p .on-name{font-size:11.5px;line-height:1.15;text-align:center;color:#2b2b3a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:58px}
+.online-p .on-name small{font-size:10px}
+.online-p.me .on-name{font-weight:800;color:#1FA45A}
+.online-more{flex:none;align-self:center;border:1.5px dashed #1FA45A;background:#F0FAF4;color:#1A7F47;border-radius:99px;padding:6px 10px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+.avatar.is-on{position:relative;overflow:visible}
+#chat-sub.on-now::after{content:' · ' attr(data-on);color:#B8F5CF;font-weight:700}
+.online-p .avatar{overflow:visible}
 
 </style>
 </head>
@@ -2070,7 +2090,7 @@ const Views = {
     }).catch(() => {});
     $('#login-form').onsubmit = async e => {
       e.preventDefault(); const b = e.target.querySelector('button'); b.disabled = true;
-      try { const u = await Store.login($('#l-email').value, $('#l-pw').value); toast(`Bonjour ${u.prenom} !`); updateChrome(); render(); }
+      try { const u = await Store.login($('#l-email').value, $('#l-pw').value); toast(`Bonjour ${u.prenom} !`); updateChrome(); render(); setTimeout(onlineBeat, 300); }
       catch (err) { al.innerHTML = `<div class="alert err">${esc(err.message)}</div>`; }
       finally { b.disabled = false; }
     };
@@ -2582,7 +2602,7 @@ function updateChrome() {
   $('#drop-who').innerHTML = logged ? `<strong>${esc(fullName(Store.user))}</strong><small>${roleLabel(Store.user.role)}</small>` : '';
   $('#account-btn span').textContent = logged ? (Store.user.prenom || 'Mon espace') : 'Mon espace';
 }
-async function logout() { await Notif.unbind();  Store.logout(); toast('Vous êtes déconnecté·e.'); location.hash = '#/'; render(); }
+async function logout() { await Notif.unbind(); try { await Store.call('presence', { method: 'DELETE' }); } catch {} ONLINE.items = []; Store.logout(); toast('Vous êtes déconnecté·e.'); location.hash = '#/'; render(); }
 
 document.addEventListener('click', e => {
   const rm = e.target.closest('[data-readmore]');
@@ -3210,6 +3230,7 @@ function chatShow() {
   $('#chat-form').hidden = !thread; $('#chat-back').hidden = Chat.mode !== 'thread'; $('#chat-del').hidden = Chat.mode !== 'thread';
   if (Chat.mode === 'inbox') { $('#chat-title').textContent = 'Messagerie'; $('#chat-sub').textContent = 'Conversations avec les salarié·e·s'; }
   if (Chat.mode === 'me') { $('#chat-title').textContent = 'Section CGT'; $('#chat-sub').textContent = 'Concentrix Compiègne · répond dès que possible'; }
+  setTimeout(onlineDots, 0);
   $('#chat-body').innerHTML = '<div class="chat-loading">Chargement…</div>';
   Chat.n = 0; Chat.msgs = [];
   chatTick(true);
@@ -3266,7 +3287,7 @@ function chatInbox() {
   const body = $('#chat-body');
   if (!Chat.inbox.length) { body.innerHTML = `<div class="chat-hello"><p>Aucune conversation pour le moment. Les salarié·e·s connecté·e·s peuvent écrire à la section avec la bulle de discussion.</p></div>`; return; }
   body.innerHTML = `<div class="inbox">${Chat.inbox.map(c => `<button class="conv ${c.unreadCgt ? 'unread' : ''}" data-conv="${esc(c.uid)}">
-    <span class="avatar initials sm">${esc((c.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase())}</span>
+    <span class="avatar initials sm${isOnline(c.uid) ? ' is-on' : ''}" data-uid="${esc(c.uid)}">${esc((c.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase())}</span>
     <span class="conv-main"><strong>${esc(c.name || 'Salarié·e')}</strong><small>${c.lastFrom === 'cgt' ? 'Vous : ' : ''}${esc(c.lastText || '')}</small></span>
     <span class="conv-side"><small>${c.lastAt ? new Date(c.lastAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</small>${c.unreadCgt ? `<span class="dot">${c.unreadCgt}</span>` : ''}</span></button>`).join('')}</div>`;
   $$('[data-conv]', body).forEach(b => b.onclick = () => {
@@ -3365,7 +3386,7 @@ function postHtml(p) {
   const me = Store.user || {}; const canDel = p.uid === me.id || me.role === 'elu';
   const img = p.fileId ? Store.link(p.fileId, p.fileName) : '';
   return `<article class="post ${mentionsMe(p) || p.all && p.uid !== (Store.user || {}).id ? 'mentioned' : ''}" data-post="${esc(p.id)}">${mentionsMe(p) ? '<span class="for-you">📣 Vous êtes mentionné·e</span>' : p.all ? '<span class="for-you all">📢 Pour tout le monde</span>' : ''}
-    <header><span class="avatar initials sm ${p.elu ? 'elu' : ''}">${esc(initialsOf(p.by))}</span>
+    <header><span class="avatar initials sm ${p.elu ? 'elu' : ''}${isOnline(p.uid) ? ' is-on' : ''}" data-uid="${esc(p.uid)}">${esc(initialsOf(p.by))}</span>
       <div><strong>${esc(p.by)}</strong>${p.elu ? ' <span class="badge-cgt">Responsable CGT</span>' : ''}<small>${[p.service, timeAgo(p.at), p.edited ? 'modifié' : ''].filter(Boolean).map(esc).join(' · ')}</small></div>
       ${p.uid === me.id ? `<button type="button" class="icon-btn" data-post-edit="${esc(p.id)}" aria-label="Modifier la publication" title="Modifier">${icon('edit')}</button>` : ''}${canDel ? `<button type="button" class="icon-btn" data-post-del="${esc(p.id)}" aria-label="Supprimer la publication" title="Supprimer">${icon('trash')}</button>` : ''}</header>
     ${p.text ? hlMentions(longText(p.text, { chars: 420, lines: 8, cls: 'post-text' }), p.mentions, p.all) : ''}
@@ -3418,6 +3439,7 @@ Object.assign(Views, {
     return `<div class="page">${pageHead('Communauté', 'Échangez entre collègues : infos, questions, soutien. Les publications apparaissent en direct.')}
       <div class="wrap page-body feed-wrap">${commTabs('fil')}
         <div class="feed-live" id="feed-live"><span class="live-dot"></span>En direct</div>
+        <div class="online-box" data-online></div>
         <form class="form-card post-box" id="post-form">
           <div class="post-box-top"><span class="avatar initials sm ${me.role === 'elu' ? 'elu' : ''}">${esc(initialsOf(fullName(me)))}</span>
           <textarea id="post-text" rows="2" maxlength="3000" placeholder="Quoi de neuf${me.id === 'admin' || !me.prenom ? '' : ', ' + esc(me.prenom)} ? Partagez avec les collègues…"></textarea></div>
@@ -3517,7 +3539,7 @@ function grpMsgHtml(m, prev) {
   const media = attHtml(m);
   const canDel = mine || me.role === 'elu';
   return sep + `<div class="grp-msg ${mine ? 'mine' : ''} ${sameAuthor && !newDay && !mentionsMe(m) ? 'cont' : ''} ${mentionsMe(m) || m.all && m.uid !== (Store.user || {}).id ? 'mentioned' : ''}" data-i="${m.i}">
-    ${mine ? '' : `<span class="avatar initials xs ${m.elu ? 'elu' : ''}">${esc(initialsOf(m.by))}</span>`}
+    ${mine ? '' : `<span class="avatar initials xs ${m.elu ? 'elu' : ''}${isOnline(m.uid) ? ' is-on' : ''}" data-uid="${esc(m.uid)}">${esc(initialsOf(m.by))}</span>`}
     <div class="grp-col">
       ${mine || (sameAuthor && !newDay) ? '' : `<div class="grp-name">${esc(m.by)}${m.typ === 'elu' ? ' <span class="badge-elu">🗳️ Élu·e</span>' : ''}${m.elu ? ' <span class="badge-cgt">CGT</span>' : ''}</div>`}
       <div class="grp-bubble ${media && !m.text ? 'media-only' : ''}${m.wink ? ' wink-b' : ''}${!media && onlyEmo(m.text) ? ' big-emo' : ''}">${mentionsMe(m) ? '<span class="for-you">📣 Pour vous</span>' : m.all ? '<span class="for-you all">📢 Pour tout le monde</span>' : ''}${media}${m.wink ? winkChip(m.wink, mine) : ''}${m.wizz ? `<p class="wizz-line">📳 ${mine ? 'Vous avez envoyé un Wizz !' : 'Wizz !'}</p>` : ''}${m.text ? `<p>${hlMentions(linkify(m.text), m.mentions, m.all)}</p>` : ''}
@@ -3568,6 +3590,7 @@ function groupView(room = '') {
     <div class="wrap page-body feed-wrap">${commTabs(elus ? 'elus' : 'discussion')}
       <section class="grp ${elus ? 'grp-elus' : ''}" id="grp" aria-label="${elus ? 'Discussion des élus' : 'Discussion globale'}">
         <header class="grp-head"><span class="grp-ico">${elus ? '🗳️' : icon('users')}</span><div><strong>${elus ? 'Discussion des élu·e·s' : 'Discussion globale'}</strong><small><span class="live-dot"></span>En direct · ${elus ? '🔒 visible uniquement par les élu·e·s' : 'visible par tous les membres'}</small></div></header>
+        <div class="online-box in-grp" data-online></div>
         <div class="grp-list" id="grp-list" aria-live="polite"><p class="note" style="text-align:center;padding:30px">Chargement…</p></div>
         <div class="grp-file" id="grp-file" hidden><span id="grp-file-prev"></span><button type="button" class="icon-btn" id="grp-file-x" aria-label="Retirer le fichier">${icon('x')}</button></div>
         <form class="grp-form" id="grp-form">
@@ -4534,6 +4557,43 @@ async function sendWink(target, id) {
   } catch (x) { toast(x.message); }
 }
 document.addEventListener('click', e => { const b = e.target.closest('[data-wink-play]'); if (b) { e.preventDefault(); playWink(b.dataset.winkPlay); } });
+
+/* =========================================================================
+   Présence : qui est connecté en ce moment (signal toutes les minutes
+   tant que l'appli est ouverte et visible ; disparaît après ~2 minutes).
+   ========================================================================= */
+const ONLINE = { items: [], timer: null, open: false };
+function onlineDraw() {
+  const me = (Store.user || {}).id; const list = ONLINE.items;
+  $$('[data-online]').forEach(box => {
+    if (!list.length) { box.innerHTML = ''; return; }
+    const show = ONLINE.open ? list : list.slice(0, 8);
+    box.innerHTML = `<div class="online-head"><span class="on-dot"></span><strong>Connecté·e·s en ce moment</strong><span class="online-n">${list.length}</span></div>
+      <div class="online-list">${show.map(o => `<span class="online-p${o.id === me ? ' me' : ''}" title="${esc(o.name)}"><span class="avatar initials xs ${o.elu ? 'elu' : ''}">${esc(initialsOf(o.name))}<i></i></span><span class="on-name">${esc(o.id === me ? 'Vous' : o.name.split(' ')[0])}${o.elu ? ' <small>🗳️</small>' : ''}</span></span>`).join('')}
+      ${list.length > 8 ? `<button type="button" class="online-more" data-online-more>${ONLINE.open ? 'Réduire' : '+ ' + (list.length - 8) + ' autres'}</button>` : ''}</div>`;
+  });
+  onlineDots();
+}
+const isOnline = id => ONLINE.items.some(o => o.id === id);
+function onlineDots() { // petite pastille verte sur l'avatar des personnes connectées (discussions, Messagerie, conversations)
+  $$('[data-uid]').forEach(el => el.classList.toggle('is-on', isOnline(el.dataset.uid)));
+  const sub = $('#chat-sub'); if (sub && Chat.open) {
+    const who = Chat.mode === 'thread' ? isOnline(Chat.uid) : Chat.mode === 'me' ? ONLINE.items.some(o => o.elu && o.id !== (Store.user || {}).id) : null;
+    sub.classList.toggle('on-now', !!who);
+    if (who !== null) sub.dataset.on = who ? (Chat.mode === 'me' ? '🟢 Un·e responsable est en ligne' : '🟢 En ligne') : '';
+  }
+}
+async function onlineBeat() {
+  clearTimeout(ONLINE.timer);
+  if (Store.isLogged() && document.visibilityState === 'visible') {
+    try { const r = await Store.call('presence', { method: 'POST' }); ONLINE.items = r.items || []; onlineDraw(); } catch {}
+  }
+  ONLINE.timer = setTimeout(onlineBeat, 60e3);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') onlineBeat(); });
+document.addEventListener('click', e => { if (e.target.closest('[data-online-more]')) { ONLINE.open = !ONLINE.open; onlineDraw(); } });
+window.addEventListener('hashchange', () => setTimeout(onlineDraw, 60));
+setTimeout(onlineBeat, 1500);
 
 </script>
 </body>

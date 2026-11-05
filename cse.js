@@ -884,6 +884,15 @@ const A = {
     return { ok: true, item: inv };
   },
 
+  async presence(req) { // qui est connecté en ce moment (signal toutes les minutes tant que l'appli est ouverte)
+    const u = await need(req); const now = Date.now();
+    if (req.method === 'POST') await redis('HSET', 'cse:online', u.id, JSON.stringify({ id: u.id, name: who(u), elu: isEluCse(u) ? 1 : 0, at: now }));
+    if (req.method === 'DELETE') { await redis('HDEL', 'cse:online', u.id); return { ok: true }; }
+    const f = (await redis('HGETALL', 'cse:online')) || []; const items = [];
+    for (let i = 1; i < f.length; i += 2) { try { const o = JSON.parse(f[i]); if (now - o.at < 150e3) items.push({ id: o.id, name: o.name, elu: o.elu }); else if (now - o.at > 3600e3) await redis('HDEL', 'cse:online', o.id); } catch {} }
+    return { items: items.sort((a, b) => a.name.localeCompare(b.name, 'fr')) };
+  },
+
   async members(req) { // annuaire pour les mentions @ : prénom, nom, type (pas d'email)
     await need(req);
     const items = (await allUsers()).filter(u => u.status === 'active').map(u => ({ id: u.id, prenom: u.prenom, nom: u.nom, elu: isEluCse(u) ? 1 : 0 }));
