@@ -1111,6 +1111,17 @@ body:has(.bil-bar:not([hidden])) .chat-fab{bottom:96px}
 
 body:has(.bil-bar:not([hidden])) #app{padding-bottom:90px}
 @media (max-width:620px){.bil-line>div:not(.stepper){flex:1 1 calc(100% - 60px)}.bil-line .stepper{margin-left:54px}}
+/* Bloc « Télécharger l'application » compact, à la taille du bandeau d'adhésion */
+.app-card{padding:11px 16px;gap:16px;border-radius:16px}
+.app-qr{width:84px;height:84px;padding:6px;border-radius:10px}
+.app-text .adh-kicker{font-size:10px;margin:0 0 2px}
+.app-text h3{font-size:clamp(15px,1.4vw,19px);margin:0 0 8px}
+.app-text>p{display:none}
+.app-actions{gap:8px}
+.app-actions .btn{padding:8px 13px;font-size:11.5px}
+@media (max-width:720px){.app-card{flex-direction:row;text-align:left;padding:12px;gap:12px;align-items:center}
+  .app-qr{width:92px;height:92px}.app-actions{justify-content:flex-start;flex-direction:column;align-items:stretch}.app-actions .btn{width:100%;justify-content:center;padding:9px 10px}}
+.app-actions .btn-red{background:#fff;color:#E30613;box-shadow:none}
 
 </style>
 </head>
