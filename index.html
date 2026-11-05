@@ -1183,6 +1183,25 @@ body:has(.bil-bar:not([hidden])) #app{padding-bottom:90px}
 .pill.elu-t{background:#EDE5FA;color:#4B2A8A}
 .pill.sal-t{background:#E8F2EC;color:#16743F}
 @media (max-width:720px){.comm-tabs.four a{font-size:11px;padding:8px 2px;gap:3px}.comm-tabs.four a svg{width:17px;height:17px}}
+/* Notifications */
+.notif-banner .nb-ico{font-size:26px;width:44px;text-align:center}
+body:has(#install-banner:not([hidden])) .notif-banner{bottom:100px}
+.notif-state{font-weight:800;margin:0 0 12px;padding:10px 12px;border-radius:10px;background:#F5F6FA}
+.notif-state.on{background:#E8F2EC;color:#16743F}
+.notif-list{display:grid;gap:8px;margin:10px 0 14px}
+.notif-item{display:flex;align-items:center;gap:12px;background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer;position:relative}
+.notif-item .ne{font-size:22px}
+.notif-item>span:nth-child(2){flex:1;min-width:0}
+.notif-item b{display:block;font-size:14.5px}
+.notif-item small{color:var(--ink-2);font-size:12.5px}
+.notif-item input{position:absolute;opacity:0;width:1px;height:1px}
+.notif-item .sw{flex-shrink:0;width:44px;height:26px;border-radius:999px;background:#D5D9E3;position:relative;transition:.2s}
+.notif-item .sw::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:.2s}
+.notif-item input:checked~.sw{background:linear-gradient(120deg,#E30613,#E6007E)}
+.notif-item input:checked~.sw::after{left:21px}
+.notif-item input:focus-visible~.sw{outline:3px solid #E6007E;outline-offset:2px}
+.notif-btns{display:flex;gap:8px;flex-wrap:wrap}
+@media (max-width:620px){.notif-btns .btn{flex:1 1 100%;justify-content:center}}
 
 </style>
 </head>
@@ -1214,6 +1233,7 @@ body:has(.bil-bar:not([hidden])) #app{padding-bottom:90px}
           <a href="#/compte" role="menuitem">Mon compte</a>
           <a href="#/elus" role="menuitem">Vos élu·e·s</a>
           <a href="#/acces" role="menuitem">QR code d'accès</a>
+          <button role="menuitem" id="drop-notif">🔔 Notifications</button>
           <button role="menuitem" id="drop-install" hidden>📱 Installer l'application</button>
           <a href="#/espace" role="menuitem" id="drop-espace" hidden>Tableau de bord</a>
           <button role="menuitem" id="drop-logout">Déconnexion</button>
@@ -1266,6 +1286,12 @@ body:has(.bil-bar:not([hidden])) #app{padding-bottom:90px}
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="install-banner notif-banner" id="notif-banner" hidden>
+  <span class="nb-ico" aria-hidden="true">🔔</span>
+  <div><strong>Activer les notifications ?</strong><small>Soyez prévenu·e des nouveaux messages, même application fermée.</small></div>
+  <button class="btn btn-red btn-sm" id="notif-go">Activer</button>
+  <button class="icon-btn" id="notif-x" aria-label="Plus tard"><svg><use href="#i-x"/></svg></button>
+</div>
 <div class="install-banner" id="install-banner" hidden>
   <img src="/icon-192.png" alt="" width="44" height="44">
   <div><strong>Application CGT Concentrix</strong><small>Installez-la sur votre téléphone, en 2 secondes.</small></div>
@@ -2164,6 +2190,7 @@ async function render() {
   const after = Views['after' + name[0].toUpperCase() + name.slice(1)]; after && after();
   drawAdhQr(); drawAppQr();
   chatSync();
+  notifAfterRender();
   if (anchor) document.getElementById(anchor)?.scrollIntoView();
   else if (!sameRoute) window.scrollTo(0, 0);
 }
@@ -2178,7 +2205,7 @@ function updateChrome() {
   $('#drop-who').innerHTML = logged ? `<strong>${esc(fullName(Store.user))}</strong><small>${roleLabel(Store.user.role)}</small>` : '';
   $('#account-btn span').textContent = logged ? (Store.user.prenom || 'Mon espace') : 'Mon espace';
 }
-function logout() { Store.logout(); toast('Vous êtes déconnecté·e.'); location.hash = '#/'; render(); }
+async function logout() { await Notif.unbind();  Store.logout(); toast('Vous êtes déconnecté·e.'); location.hash = '#/'; render(); }
 
 document.addEventListener('click', e => {
   const rm = e.target.closest('[data-readmore]');
@@ -3437,6 +3464,72 @@ document.addEventListener('submit', async e => {
   const b = f.querySelector('button'); b.disabled = true;
   try { await Store.call('billet', { method: 'POST', query: '&id=' + encodeURIComponent(f.dataset.bilPropose), body: { action: 'propose', date: d.date, msg: d.msg } }); toast('Proposition envoyée.'); render(); }
   catch (x) { toast(x.message); b.disabled = false; }
+});
+
+/* =========================================================================
+   Notifications push : messagerie privée, discussions, « Nous contacter »,
+   billetterie et adhésions. Réglages par appareil (menu du compte → 🔔).
+   ========================================================================= */
+const Notif = { key: null, synced: false,
+  get ok() { return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; },
+  get prefs() { return ls.get('cse-notif-prefs', {}); }, set prefs(v) { ls.set('cse-notif-prefs', v); },
+  async reg() { return navigator.serviceWorker.ready; },
+  async sub() { try { return await (await this.reg()).pushManager.getSubscription(); } catch { return null; } },
+  async getKey() { if (!this.key) { const r = await Store.call('push'); if (!r.enabled) throw new Error("Les notifications ne sont pas encore configurées sur le serveur."); this.key = r.key; } return this.key; },
+  async enable(test) {
+    if (!this.ok) throw new Error('Votre navigateur ne gère pas les notifications.');
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') throw new Error(perm === 'denied' ? 'Notifications bloquées : autorisez-les dans les réglages du navigateur pour ce site.' : 'Notifications non autorisées.');
+    const key = await this.getKey(); const r = await this.reg();
+    const raw = Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+    const sub = (await r.pushManager.getSubscription()) || await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
+    await Store.call('push', { method: 'POST', query: test ? '&test=1' : '', body: { sub: sub.toJSON(), prefs: this.prefs } });
+    this.synced = true; ls.set('cse-notif-on', 1);
+  },
+  async disable() { const sub = await this.sub(); if (sub) { try { await Store.call('push', { method: 'DELETE', body: { sub: sub.toJSON() } }); } catch {} await sub.unsubscribe().catch(() => {}); } ls.del('cse-notif-on'); },
+  async unbind() { if (!this.ok || !Store.isLogged()) return; const sub = await this.sub(); if (sub) try { await Store.call('push', { method: 'DELETE', body: { sub: sub.toJSON() } }); } catch {} this.synced = false; },
+};
+async function notifAfterRender() {
+  if (!Store.isLogged() || Store.mode === 'demo') return;
+  const q = new URLSearchParams(location.search);
+  if (q.get('open') === 'chat') { history.replaceState(null, '', location.pathname + location.hash); setTimeout(() => chatOpen(), 300); }
+  if (!Notif.ok) return;
+  if (!Notif.synced && Notification.permission === 'granted' && ls.get('cse-notif-on', 0)) { Notif.synced = true; Notif.enable().catch(() => {}); } // rattache l'appareil au compte connecté
+  const nb = $('#notif-banner');
+  if (nb) nb.hidden = !(Notification.permission === 'default' && ls.get('cse-notif-x', 0) < Date.now() && !(isIOS() && !isStandalone()));
+}
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.type === 'open') location.href = e.data.url; });
+async function notifSettings() {
+  closeDrop();
+  const u = Store.user || {}, admin = u.role === 'elu', pr = Notif.prefs;
+  const sub = Notif.ok ? await Notif.sub() : null, on = !!sub && Notification.permission === 'granted';
+  const items = [['chat', '💬', 'Messagerie privée', admin ? 'Messages des salarié·e·s à la section' : 'Réponses de la section CGT'], ['global', '👥', 'Discussion globale', 'Nouveaux messages du salon de tous les membres'],
+    ...(isEluCse(u) ? [['elus', '🗳️', 'Discussion élus', 'Nouveaux messages entre élu·e·s']] : []),
+    ...(admin ? [['contact', '✉️', '« Nous contacter »', 'Messages envoyés par le formulaire'], ['gestion', '🎟️', 'Billetterie & adhésions', 'Nouvelles commandes et adhésions en ligne']] : [])];
+  const why = !Notif.ok ? (isIOS() ? "Sur iPhone, installez d'abord l'application : bouton Partager ⬆️ puis « Sur l'écran d'accueil ». Ouvrez-la depuis l'icône, puis revenez ici." : 'Ce navigateur ne gère pas les notifications. Essayez Chrome ou Samsung Internet.')
+    : Notification.permission === 'denied' ? 'Les notifications sont bloquées pour ce site. Autorisez-les dans les réglages du navigateur (icône 🔒 à côté de l’adresse → Notifications).' : '';
+  $('#modal-title').textContent = '🔔 Notifications';
+  $('#modal-body').innerHTML = `<div class="notif-set">
+    <p class="notif-state ${on ? 'on' : ''}">${on ? '✅ Activées sur cet appareil' : '🔕 Désactivées sur cet appareil'}</p>
+    ${why ? `<div class="alert warn">${why}</div>` : ''}
+    <p class="note" style="margin-top:0">Choisissez ce qui vous est signalé, même quand l'application est fermée :</p>
+    <div class="notif-list">${items.map(([k, e, l, d]) => `<label class="notif-item"><span class="ne">${e}</span><span><b>${l}</b><small>${d}</small></span><input type="checkbox" data-np="${k}" ${pr[k] === false ? '' : 'checked'}><i class="sw"></i></label>`).join('')}</div>
+    <div class="notif-btns">${on ? `<button type="button" class="btn btn-red" id="np-save">${icon('check')}Enregistrer</button><button type="button" class="btn btn-light" id="np-test">Envoyer un test</button><button type="button" class="btn btn-light" id="np-off">Désactiver</button>`
+      : `<button type="button" class="btn btn-red" id="np-on" ${why && Notification.permission !== 'default' || !Notif.ok ? 'disabled' : ''}>🔔 Activer les notifications</button>`}</div></div>`;
+  $('#modal-form').onsubmit = e => { e.preventDefault(); $('#modal').close(); };
+  const readPrefs = () => { const p = {}; $$('[data-np]').forEach(c => { p[c.dataset.np] = c.checked; }); Notif.prefs = { ...Notif.prefs, ...p }; };
+  const act = async (fn, msg) => { try { readPrefs(); await fn(); toast(msg); notifSettings(); } catch (x) { toast(x.message); } };
+  const b = id => $('#' + id); 
+  if (b('np-on')) b('np-on').onclick = () => act(() => Notif.enable(true), 'Notifications activées !');
+  if (b('np-save')) b('np-save').onclick = () => act(() => Notif.enable(false), 'Réglages enregistrés.');
+  if (b('np-test')) b('np-test').onclick = () => act(() => Notif.enable(true), 'Notification de test envoyée.');
+  if (b('np-off')) b('np-off').onclick = () => act(() => Notif.disable(), 'Notifications désactivées sur cet appareil.');
+  if (!$('#modal').open) $('#modal').showModal();
+}
+document.addEventListener('click', e => {
+  if (e.target.closest('#drop-notif, [data-notif-open]')) { e.preventDefault(); notifSettings(); }
+  if (e.target.closest('#notif-x')) { ls.set('cse-notif-x', Date.now() + 7 * 864e5); $('#notif-banner').hidden = true; }
+  if (e.target.closest('#notif-go')) { $('#notif-banner').hidden = true; Notif.enable(true).then(() => toast('Notifications activées !')).catch(x => { toast(x.message); }); }
 });
 
 </script>

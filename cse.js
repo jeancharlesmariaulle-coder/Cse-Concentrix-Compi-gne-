@@ -23,6 +23,8 @@ const MAX_FILE = 3.2 * 1024 * 1024;
 
 /* ---------- stockage : Upstash Redis si configuré, sinon Vercel Blob ---------- */
 const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || '', VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:cgtwebhelpcompiegne@gmail.com';
 const storageReady = () => Boolean((REDIS_URL && REDIS_TOKEN) || BLOB_TOKEN);
 async function redisHttp(cmd) {
   const r = await fetch(REDIS_URL, { method: 'POST', headers: { Authorization: `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' }, body: JSON.stringify(cmd) });
@@ -209,6 +211,8 @@ async function chatPush(uid, msg, metaInit) {
   Object.assign(meta, { lastText: msg.text.slice(0, 120), lastAt: msg.at, lastFrom: msg.from });
   if (msg.from === 'user') meta.unreadCgt = (meta.unreadCgt || 0) + 1; else meta.unreadUser = (meta.unreadUser || 0) + 1;
   await redis('HSET', 'cse:chats', uid, JSON.stringify(meta));
+  if (msg.from === 'user') await notify({ to: 'admins', except: uid, pref: 'chat', title: `💬 ${msg.by}`, body: msg.text, url: '/?open=chat', tag: 'chat-' + uid });
+  else await notify({ to: uid, pref: 'chat', title: `💬 ${msg.by || 'Section CGT'}`, body: msg.text, url: '/?open=chat', tag: 'chat' });
   return { msg, meta };
 }
 
@@ -310,6 +314,61 @@ const BILLETS = [
     { id: 'billet', label: 'Billet', prix: 1800 }] },
 ];
 const BILLET_ST = ['nouvelle', 'prete', 'retiree', 'annulee'];
+
+
+/* ---------- Notifications push (Web Push, RFC 8291 + VAPID RFC 8292), sans module externe ---------- */
+const ub64 = s => Buffer.from(String(s || ''), 'base64url');
+const hkdf = (salt, ikm, info, len) => Buffer.from(crypto.hkdfSync('sha256', ikm, salt, info, len));
+function wpEncrypt(payload, p256dh, auth, opts = {}) { // opts : clé éphémère / sel imposés (tests)
+  const ua = ub64(p256dh), authSecret = ub64(auth);
+  const ecdh = crypto.createECDH('prime256v1');
+  if (opts.asPrivate) ecdh.setPrivateKey(ub64(opts.asPrivate)); else ecdh.generateKeys();
+  const asPub = ecdh.getPublicKey(); const secret = ecdh.computeSecret(ua);
+  const ikm = hkdf(authSecret, secret, Buffer.concat([Buffer.from('WebPush: info\0'), ua, asPub]), 32);
+  const salt = opts.salt ? ub64(opts.salt) : crypto.randomBytes(16);
+  const cek = hkdf(salt, ikm, Buffer.from('Content-Encoding: aes128gcm\0'), 16);
+  const nonce = hkdf(salt, ikm, Buffer.from('Content-Encoding: nonce\0'), 12);
+  const c = crypto.createCipheriv('aes-128-gcm', cek, nonce);
+  const ct = Buffer.concat([c.update(Buffer.concat([Buffer.from(payload), Buffer.from([2])])), c.final(), c.getAuthTag()]);
+  const rs = Buffer.alloc(4); rs.writeUInt32BE(4096);
+  return Buffer.concat([salt, rs, Buffer.from([asPub.length]), asPub, ct]);
+}
+function vapidAuth(endpoint) {
+  const pub = ub64(VAPID_PUBLIC);
+  const key = crypto.createPrivateKey({ key: { kty: 'EC', crv: 'P-256', d: VAPID_PRIVATE, x: pub.subarray(1, 33).toString('base64url'), y: pub.subarray(33, 65).toString('base64url') }, format: 'jwk' });
+  const enc = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const data = enc({ typ: 'JWT', alg: 'ES256' }) + '.' + enc({ aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: VAPID_SUBJECT });
+  const sig = crypto.sign('sha256', Buffer.from(data), { key, dsaEncoding: 'ieee-p1363' }).toString('base64url');
+  return `vapid t=${data}.${sig}, k=${VAPID_PUBLIC}`;
+}
+async function wpSend(sub, payload) {
+  const body = wpEncrypt(JSON.stringify(payload), sub.keys.p256dh, sub.keys.auth);
+  const r = await fetch(sub.endpoint, { method: 'POST', body, signal: AbortSignal.timeout(6000),
+    headers: { TTL: '86400', Urgency: 'high', 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Authorization: vapidAuth(sub.endpoint) } });
+  return r.status;
+}
+const PUSH_PREFS = ['chat', 'global', 'elus', 'contact', 'gestion'];
+const pushId = ep => crypto.createHash('sha256').update(String(ep)).digest('base64url').slice(0, 24);
+/* to : 'all' | 'admins' | 'elus' | uid ; except : uid de l'auteur ; pref : type de notification */
+async function notify({ to, except, pref, title, body, url = '/', tag }) {
+  if (!(VAPID_PUBLIC && VAPID_PRIVATE && REDIS_URL)) return;
+  try {
+    const f = (await redis('HGETALL', 'cse:push')) || []; let subs = [];
+    for (let i = 0; i < f.length; i += 2) { try { const o = JSON.parse(f[i + 1]); o.k = f[i]; subs.push(o); } catch {} }
+    subs = subs.filter(o => o.uid !== except && (!pref || !o.prefs || o.prefs[pref] !== false));
+    if (to !== 'all') {
+      if (to === 'admins' || to === 'elus') {
+        const users = Object.fromEntries((await allUsers()).map(u => [u.id, u])); users.admin = ADMIN_USER;
+        subs = subs.filter(o => { const u = users[o.uid]; return u && u.status === 'active' && (to === 'admins' ? u.role === 'elu' : isEluCse(u)); });
+      } else subs = subs.filter(o => o.uid === to);
+    }
+    const payload = { title: String(title).slice(0, 80), body: String(body || '').slice(0, 180), url, tag: tag || pref || 'cgt' };
+    for (let i = 0; i < subs.length; i += 40) {
+      const res = await Promise.allSettled(subs.slice(i, i + 40).map(o => wpSend(o.sub, payload)));
+      for (const [j, r] of res.entries()) if (r.status === 'fulfilled' && (r.value === 404 || r.value === 410)) await redis('HDEL', 'cse:push', subs[i + j].k);
+    }
+  } catch (e) { console.warn('notify', e.message); }
+}
 
 const A = {
   async health() { let migrated = null; if (REDIS_URL && REDIS_TOKEN) { try { migrated = JSON.parse(await redisHttp(['GET', 'cse:migrated']) || 'null'); } catch {} } return { ok: true, storage: storageReady(), backend: REDIS_URL && REDIS_TOKEN ? 'redis' : BLOB_TOKEN ? 'blob' : 'none', migrated, auth: Boolean(ADMIN_PASSWORD) }; },
@@ -420,7 +479,9 @@ const A = {
       const anon = Boolean(b.anonyme);
       const item = { id: newId(), created: new Date().toISOString(), sujet: clip(b.sujet), message: clip(b.message, 'message'), contact: clip(b.contact),
         nom: anon ? '' : `${u.prenom} ${u.nom}`, service: anon ? '' : (u.service || ''), email: anon ? '' : u.email, anonyme: anon };
-      await redis('HSET', key, item.id, JSON.stringify(item)); return { item };
+      await redis('HSET', key, item.id, JSON.stringify(item));
+      await notify({ to: 'admins', except: u.id, pref: 'contact', title: '✉️ Nouveau message « Nous contacter »', body: `${anon ? 'Anonyme' : item.nom} · ${item.sujet || ''} : ${item.message}`, url: '/#/messages', tag: 'contact' });
+      return { item };
     }
     await need(req, 'elu');
     let item = {};
@@ -623,7 +684,21 @@ const A = {
       await redis('LTRIM', LK, len - GROUP_KEEP, -1); m.base = m.n - GROUP_KEEP;
     }
     await redis('SET', MK, JSON.stringify(m));
+    await notify(room ? { to: 'elus', except: u.id, pref: 'elus', title: '🗳️ Discussion élus', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/elus', tag: 'grp-elus' }
+      : { to: 'all', except: u.id, pref: 'global', title: '👥 Discussion globale', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/discussion', tag: 'grp' });
     return { n: m.n, msg };
+  },
+
+  async push(req) {
+    if (req.method === 'GET') return { key: VAPID_PUBLIC, enabled: !!(VAPID_PUBLIC && VAPID_PRIVATE) };
+    const u = await need(req); const b = body(req); const sub = b.sub || {};
+    if (!/^https:\/\//.test(String(sub.endpoint || '')) || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) throw fail(400, 'Abonnement invalide.');
+    const k = pushId(sub.endpoint);
+    if (req.method === 'DELETE') { await redis('HDEL', 'cse:push', k); return { ok: true }; }
+    const prefs = {}; for (const p of PUSH_PREFS) prefs[p] = !(b.prefs && b.prefs[p] === false);
+    await redis('HSET', 'cse:push', k, JSON.stringify({ uid: u.id, sub: { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } }, prefs, at: new Date().toISOString() }));
+    if (req.query.test) { const st = await wpSend(sub, { title: '🔔 Notifications activées', body: 'Vous recevrez ici les nouveaux messages de la CGT Concentrix Compiègne.', url: '/', tag: 'test' }); return { ok: true, prefs, test: st }; }
+    return { ok: true, prefs };
   },
 
   async billet(req) {
@@ -649,6 +724,7 @@ const A = {
       if (!it.telephone && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(it.email)) throw fail(400, 'Indiquez un téléphone ou un email.');
       if (!b.engage) throw fail(400, "Merci de confirmer que vous réglerez la commande au CSE.");
       await redis('HSET', 'cse:billets', it.id, JSON.stringify(it));
+      await notify({ to: 'admins', except: u.id, pref: 'gestion', title: '🎟️ Nouvelle commande de billets', body: `${it.prenom} ${it.nom} · ${it.n} billet${it.n > 1 ? 's' : ''} · n° ${it.num}`, url: '/#/espace', tag: 'billet' });
       return { ok: true, item: it };
     }
     const all = async () => { const f = (await redis('HGETALL', 'cse:billets')) || []; const o = []; for (let i = 1; i < f.length; i += 2) { try { o.push(JSON.parse(f[i])); } catch {} } return o.sort((a, c) => String(c.created).localeCompare(String(a.created))); };
@@ -715,6 +791,7 @@ const A = {
         it.sepa_signature = b.sepa_signature;
       }
       await redis('HSET', 'cse:adhesions', it.id, JSON.stringify(it));
+      await notify({ to: 'admins', pref: 'gestion', title: '✊ Nouvelle adhésion en ligne', body: `${it.prenom} ${it.nom}`, url: '/#/adhesions', tag: 'adhesion' });
       return { ok: true, id: it.id };
     }
     await need(req, 'elu');
