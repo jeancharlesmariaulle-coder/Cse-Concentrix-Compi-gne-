@@ -705,6 +705,9 @@ const A = {
       await redis('LTRIM', LK, len - GROUP_KEEP, -1); m.base = m.n - GROUP_KEEP;
     }
     await redis('SET', MK, JSON.stringify(m));
+    if (!text && len > 1) { // photos envoyées en série : une seule notification (celle du 1er message)
+      try { const prev = JSON.parse(await redis('LINDEX', LK, len - 2)); if (prev && prev.uid === u.id && Date.now() - Date.parse(prev.at) < 60e3) return { n: m.n, msg }; } catch {}
+    }
     if (mentions.length) await notify({ to: mentions.map(m => m.id), pref: 'mention', title: `📣 ${msg.by} vous a mentionné·e`, body: `${room ? '🗳️ Discussion élus' : '👥 Discussion globale'} : ${text}`, url: room ? '/#/communaute/elus' : '/#/communaute/discussion', tag: 'mention' });
     const ml = mentions.map(m => m.id);
     if (toAll) await notify({ to: room ? 'elus' : 'all', except: u.id, exceptList: ml, pref: 'mention', title: `📢 ${msg.by} à tout le monde`, body: `${room ? '🗳️ Discussion élus' : '👥 Discussion globale'} : ${text}`, url: room ? '/#/communaute/elus' : '/#/communaute/discussion', tag: 'tous' });
