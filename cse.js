@@ -212,7 +212,7 @@ async function chatPush(uid, msg, metaInit) {
     for (const x of (await redis('LRANGE', chatKey(uid), 0, len - CHAT_KEEP - 1)) || []) { try { const o = JSON.parse(x); if (o.fileId) await delFile(o.fileId); } catch {} }
     await redis('LTRIM', chatKey(uid), len - CHAT_KEEP, -1); meta.base = meta.n - CHAT_KEEP;
   }
-  const shown = msg.text || (msg.fileId ? (/^image\//.test(msg.fileType || '') ? '📷 Photo' : /^video\//.test(msg.fileType || '') ? '🎬 Vidéo' : '📎 ' + (msg.fileName || 'Fichier')) : '');
+  const shown = msg.wizz ? `📳 ${msg.by || 'Quelqu’un'} vous envoie un Wizz !` : msg.text || (msg.fileId ? (/^image\//.test(msg.fileType || '') ? '📷 Photo' : /^video\//.test(msg.fileType || '') ? '🎬 Vidéo' : /^Message vocal/.test(msg.fileName || '') ? '🎤 Message vocal' : '📎 ' + (msg.fileName || 'Fichier')) : '');
   Object.assign(meta, { lastText: shown.slice(0, 120), lastAt: msg.at, lastFrom: msg.from });
   if (msg.from === 'user') meta.unreadCgt = (meta.unreadCgt || 0) + 1; else meta.unreadUser = (meta.unreadUser || 0) + 1;
   await redis('HSET', 'cse:chats', uid, JSON.stringify(meta));
@@ -579,10 +579,11 @@ const A = {
     }
     if (op === 'send') {
       const b = body(req); const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
-      const hasFile = fileGiven(b.file);
-      if (!text && !hasFile) throw fail(400, 'Message vide.');
+      const hasFile = fileGiven(b.file); const wizz = b.wizz ? { wizz: 1 } : {};
+      if (!text && !hasFile && !b.wizz) throw fail(400, 'Message vide.');
       await rateLimit(req, 'chat', 120);
-      const att = hasFile ? await saveMedia(b.file) : {}; // photo, vidéo ou document joint
+      if (b.wizz && !(await redis('SET', `cse:wizz:${u.id}`, '1', 'NX', 'EX', 20))) throw fail(429, 'Un Wizz toutes les 20 secondes maximum 😉');
+      const att = hasFile ? await saveMedia(b.file) : wizz; // photo, vidéo, document joint… ou Wizz
       if (b.to) { // réponse de la section
         if (!elu) throw fail(403, 'Réservé aux responsables.');
         const meta = await chatMeta(String(b.to)); if (!meta) throw fail(404, 'Conversation introuvable.');
@@ -786,8 +787,8 @@ const A = {
     if (mentions.length) await notify({ to: mentions.map(m => m.id), pref: 'mention', title: `📣 ${msg.by} vous a mentionné·e`, body: `${room ? '🗳️ Discussion élus' : '👥 Discussion globale'} : ${text}`, url: room ? '/#/communaute/elus' : '/#/communaute/discussion', tag: 'mention' });
     const ml = mentions.map(m => m.id);
     if (toAll) await notify({ to: room ? 'elus' : 'all', except: u.id, exceptList: ml, pref: 'mention', title: `📢 ${msg.by} à tout le monde`, body: `${room ? '🗳️ Discussion élus' : '👥 Discussion globale'} : ${text}`, url: room ? '/#/communaute/elus' : '/#/communaute/discussion', tag: 'tous' });
-    else await notify(room ? { to: 'elus', except: u.id, exceptList: ml, pref: 'elus', title: '🗳️ Discussion élus', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/elus', tag: 'grp-elus' }
-      : { to: 'all', except: u.id, exceptList: ml, pref: 'global', title: '👥 Discussion globale', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/discussion', tag: 'grp' });
+    else await notify(room ? { to: 'elus', except: u.id, exceptList: ml, pref: 'elus', title: '🗳️ Discussion élus', body: `${msg.by} : ${text || (/^Message vocal/.test(msg.fileName || '') ? '🎤 Message vocal' : '📷 Photo / vidéo')}`, url: '/#/communaute/elus', tag: 'grp-elus' }
+      : { to: 'all', except: u.id, exceptList: ml, pref: 'global', title: '👥 Discussion globale', body: `${msg.by} : ${text || (/^Message vocal/.test(msg.fileName || '') ? '🎤 Message vocal' : '📷 Photo / vidéo')}`, url: '/#/communaute/discussion', tag: 'grp' });
     return { n: m.n, msg };
   },
 

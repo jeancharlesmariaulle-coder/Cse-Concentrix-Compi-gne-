@@ -1333,6 +1333,47 @@ body:has(#install-banner:not([hidden])) .notif-banner{bottom:100px}
 .post-att{margin:8px 0}
 .grp-bubble audio,.bub-att audio,.post-att audio{width:100%;max-width:280px;display:block}
 @media (min-width:721px){.gp-grid{columns:3}}
+/* Message vocal */
+.mic-btn{font-size:18px}
+.grp-form,.chat-input{position:relative}
+.voice-bar{position:absolute;inset:0;z-index:5;display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fff;border-radius:inherit}
+.vb-dot{width:12px;height:12px;border-radius:50%;background:#E30613;animation:vbBlink 1s infinite}
+@keyframes vbBlink{50%{opacity:.2}}
+.vb-t{font-weight:900;font-variant-numeric:tabular-nums;min-width:38px}
+.vb-l{flex:1;font-size:13px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.voice-bar .btn{padding:8px 10px}
+.voice-msg{display:flex;align-items:center;gap:8px;min-width:220px}
+.vm-ico{font-size:20px}
+.voice-msg audio{flex:1;min-width:0;height:36px}
+@media (max-width:420px){.vb-l{display:none}}
+@media (max-width:520px){.grp-form,.chat-input{gap:4px}.grp-form .icon-btn,.chat-input .icon-btn{width:34px;height:34px;min-width:34px;padding:0}.grp-form .gif-btn,.chat-input .gif-btn{width:auto;padding:0 5px;font-size:10.5px;height:28px}.mic-btn,.att-file,.chat-clip{font-size:16px}}
+/* Touche rétro : émoticônes, Wizz, grosses émoticônes */
+.emo-btn{font-size:19px}
+#chat-form,#grp-form{position:relative}
+.emo-pop{position:absolute;left:6px;right:6px;bottom:calc(100% + 6px);z-index:40;background:#fff;border-radius:14px;box-shadow:0 14px 34px rgba(14,26,51,.25);border:1.5px solid #F3B9D6;overflow:hidden;max-width:420px}
+.emo-tabs{display:flex;gap:2px;padding:6px;background:linear-gradient(120deg,#FCE4F0,#fff);border-bottom:1px solid #F3B9D6;overflow-x:auto;scrollbar-width:none}
+.emo-tab{flex-shrink:0;border:0;background:none;font-size:20px;padding:5px 8px;border-radius:9px;cursor:pointer;font-weight:900;color:#E6007E}
+.emo-tab.on{background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.emo-gif,.emo-wizz{font-size:12px;letter-spacing:.02em}
+.emo-wizz{color:#fff;background:linear-gradient(120deg,#E30613,#E6007E)!important;margin-left:auto}
+.emo-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;padding:8px;max-height:210px;overflow:auto}
+.emo-i{border:0;background:none;font-size:24px;line-height:1;padding:5px 0;border-radius:8px;cursor:pointer}
+.emo-i:hover,.emo-i:focus-visible{background:#FCE4F0}
+.emo-grid:has(.emo-codes){display:block}
+.emo-codes{display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:4px}
+.emo-code{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 6px;cursor:pointer}
+.emo-code span{font-size:20px}.emo-code code{font-size:11.5px;color:var(--ink-2);font-weight:700}
+.emo-foot{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:6px 10px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-2)}
+.emo-sound{display:flex;align-items:center;gap:5px;font-weight:700;color:var(--ink);white-space:nowrap}
+.big-emo .txt,.grp-bubble.big-emo p{font-size:40px;line-height:1.15}
+.bubble.big-emo,.grp-bubble.big-emo{background:transparent!important;box-shadow:none!important;padding-left:2px;padding-right:2px}
+.grp-msg.mine .grp-bubble.big-emo,.bubble.me.big-emo{color:inherit}
+.bubble.big-emo .time,.grp-bubble.big-emo .grp-time{color:var(--muted)!important}
+.wizz-msg .txt{font-weight:900;letter-spacing:.02em}
+@keyframes wizz{0%,100%{transform:translate(0,0)}10%{transform:translate(-9px,4px)}20%{transform:translate(8px,-5px)}30%{transform:translate(-8px,-3px)}40%{transform:translate(9px,5px)}50%{transform:translate(-7px,3px)}60%{transform:translate(6px,-4px)}70%{transform:translate(-5px,2px)}80%{transform:translate(4px,-2px)}90%{transform:translate(-2px,1px)}}
+.wizzing{animation:wizz .8s cubic-bezier(.36,.07,.19,.97)}
+@media (prefers-reduced-motion:reduce){.wizzing{animation:none}}
+@media (max-width:520px){.emo-grid{grid-template-columns:repeat(7,1fr)}}
 
 </style>
 </head>
@@ -2954,7 +2995,8 @@ function chatMount() {
       <form class="chat-input" id="chat-form">
         <label class="icon-btn chat-clip" title="Photo / vidéo" aria-label="Joindre une photo ou une vidéo"><input type="file" id="chat-photo" accept="image/*,video/*" hidden>${icon('image')}</label>
         <label class="icon-btn chat-clip" title="Fichier (document, PDF, audio…)" aria-label="Joindre un fichier"><input type="file" id="chat-file" accept="${DOC_ACCEPT}" hidden>📎</label>
-        <button type="button" class="icon-btn gif-btn chat-gif" data-gif-pick="chat" title="GIF" aria-label="Choisir un GIF">GIF</button>
+        <button type="button" class="icon-btn emo-btn" data-emo="chat" title="Émoticônes, GIF et Wizz" aria-label="Émoticônes, GIF et Wizz">😊</button>
+        <button type="button" class="icon-btn mic-btn" data-voice="chat" title="Message vocal" aria-label="Enregistrer un message vocal">🎤</button>
         <textarea id="chat-text" rows="1" placeholder="Écrivez votre message…" maxlength="2000" aria-label="Votre message"></textarea>
         <button class="chat-send" type="submit" aria-label="Envoyer">${icon('send')}</button>
       </form>
@@ -2972,7 +3014,7 @@ function chatMount() {
     $('#chat-att-x').onclick = () => { chatFile = null; drawAtt(); }; };
   $('#chat-photo').onchange = e => $('#chat-file').onchange(e);
   $('#chat-file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; if (f.size > (isDocFile(f) ? 50 : 300) * 1024 * 1024) { toast('Fichier trop lourd.'); return; } chatFile = f; drawAtt(); ta.focus(); };
-  $('#chat-form').onsubmit = async e => { e.preventDefault(); const t = ta.value.trim(); if ((!t && !chatFile) || Chat.busy) return; Chat.busy = true;
+  $('#chat-form').onsubmit = async e => { e.preventDefault(); const t = emoConvert(ta.value).trim(); if ((!t && !chatFile) || Chat.busy) return; Chat.busy = true;
     try {
       const file = chatFile ? await mediaPrepare(chatFile, pc => drawAtt(pc)) : null;
       ta.value = ''; ta.style.height = 'auto';
@@ -3037,7 +3079,10 @@ async function chatTick(first) {
       if (r.v !== undefined) Chat.v = r.v;
       if (first) $('#chat-body').innerHTML = '';
       if (r.messages.length) Chat.lastAct = Date.now();
+      const mineM = m => (Chat.mode === 'me' ? m.from === 'user' : m.from === 'cgt');
+      const incoming = first ? [] : r.messages.filter(m => !mineM(m) && !Chat.msgs.some(x => x.i === m.i));
       chatAdd(r.messages); Chat.n = Math.max(Chat.n, r.n || 0);
+      if (incoming.some(m => m.wizz)) retroWizz(); else if (incoming.length) retroSound('msg');
       if (first && !Chat.msgs.length) chatEmpty();
       if (Chat.mode === 'me') { Chat.unread = 0; chatBadge(); }
     }
@@ -3050,7 +3095,7 @@ function chatEmpty() {
     ? `<div class="chat-hello"><img src="${im('cgt-fapt.jpg')}" alt=""><strong>Bonjour ${esc(Store.user.prenom || '')} 👋</strong><p>Écrivez-nous ici : un·e responsable de la section CGT vous répondra dès que possible. Vos messages ne sont lus que par les responsables de la section.</p></div>`
     : '<div class="chat-hello"><p>Aucun message dans cette conversation.</p></div>';
 }
-const linkify = t => esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+const linkify = t => esc(emoText(t)).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
 function chatAdd(list) {
   const body = $('#chat-body'); if (!body || !list || !list.length) return;
   const fresh = list.filter(m => !Chat.msgs.some(x => x.i === m.i)); if (!fresh.length) return;
@@ -3062,7 +3107,7 @@ function chatAdd(list) {
     const day = new Date(m.at).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
     if (!prev || new Date(prev.at).toDateString() !== new Date(m.at).toDateString()) body.insertAdjacentHTML('beforeend', `<div class="chat-day">${esc(day)}</div>`);
     const showBy = !mine(m) && (!prev || prev.from !== m.from || prev.by !== m.by);
-    body.insertAdjacentHTML('beforeend', `<div class="bubble ${mine(m) ? 'me' : 'them'}" data-ci="${m.i}">${showBy ? `<span class="by">${esc(m.by || '')}</span>` : ''}${m.fileId ? `<div class="bub-att">${attHtml(m)}</div>` : ''}${m.text ? `<div class="txt">${linkify(m.text)}</div>` : ''}<span class="time">${new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}${m.edited ? ' <em class="edited">· modifié</em>' : ''}${mine(m) ? ` · <button type="button" class="bub-edit" data-chat-edit="${m.i}">Modifier</button>` : ''}</span></div>`);
+    body.insertAdjacentHTML('beforeend', `<div class="bubble ${mine(m) ? 'me' : 'them'}${m.wizz ? ' wizz-msg' : ''}${onlyEmo(m.text) ? ' big-emo' : ''}" data-ci="${m.i}">${showBy ? `<span class="by">${esc(m.by || '')}</span>` : ''}${m.fileId ? `<div class="bub-att">${attHtml(m)}</div>` : ''}${m.wizz ? `<div class="txt">📳 ${mine(m) ? 'Vous avez envoyé un Wizz !' : 'Wizz !'}</div>` : m.text ? `<div class="txt">${linkify(m.text)}</div>` : ''}<span class="time">${new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}${m.edited ? ' <em class="edited">· modifié</em>' : ''}${mine(m) && m.text ? ` · <button type="button" class="bub-edit" data-chat-edit="${m.i}">Modifier</button>` : ''}</span></div>`);
     Chat.msgs.push(m);
   }
   if (nearBottom || fresh.some(mine) || Chat.msgs.length === fresh.length) body.scrollTop = body.scrollHeight;
@@ -3226,7 +3271,7 @@ Object.assign(Views, {
           <div class="post-box-top"><span class="avatar initials sm ${me.role === 'elu' ? 'elu' : ''}">${esc(initialsOf(fullName(me)))}</span>
           <textarea id="post-text" rows="2" maxlength="3000" placeholder="Quoi de neuf${me.id === 'admin' || !me.prenom ? '' : ', ' + esc(me.prenom)} ? Partagez avec les collègues…"></textarea></div>
           <div class="post-photo" id="post-photo" hidden><img alt=""><button type="button" class="icon-btn" id="post-photo-x" aria-label="Retirer la photo">${icon('x')}</button></div>
-          <div class="post-box-bar"><label class="btn btn-light btn-sm"><input type="file" accept="image/*,video/*" id="post-file" hidden>${icon('image')}Photo / vidéo</label><label class="btn btn-light btn-sm"><input type="file" accept="${DOC_ACCEPT}" id="post-doc" hidden>📎 Fichier</label><button type="button" class="btn btn-light btn-sm gif-btn-txt" data-gif-pick="feed">GIF</button>
+          <div class="post-box-bar"><label class="btn btn-light btn-sm"><input type="file" accept="image/*,video/*" id="post-file" hidden>${icon('image')}Photo / vidéo</label><label class="btn btn-light btn-sm"><input type="file" accept="${DOC_ACCEPT}" id="post-doc" hidden>📎 Fichier</label><button type="button" class="btn btn-light btn-sm" data-emo="feed">😊 Émoticônes / GIF</button>
             <button class="btn btn-red btn-sm" type="submit" id="post-go">${icon('send')}Publier</button></div>
         </form>
         <p class="note feed-rules">Restez courtois·e : pas d'attaques personnelles ni d'informations confidentielles. Les responsables CGT peuvent retirer une publication.</p>
@@ -3245,7 +3290,7 @@ Object.assign(Views, {
       pv.querySelector('img').removeAttribute('src'); pv.classList.remove('is-vid'); pv.classList.add('is-doc'); pv.dataset.name = '📎 ' + fl.name; pv.hidden = false; };
     $('#post-photo-x').onclick = () => { Feed.photo = null; Feed.photoFile = null; Feed.gif = null; pv.hidden = true; };
     $('#post-form').onsubmit = async e => {
-      e.preventDefault(); const ta = $('#post-text'), text = ta.value.trim();
+      e.preventDefault(); const ta = $('#post-text'), text = emoConvert(ta.value).trim();
       if (!text && !Feed.photo) { ta.focus(); return; }
       const b = $('#post-go'); b.disabled = true;
       try { const file = Feed.gif ? { gif: Feed.gif } : Feed.photoFile ? await mediaPrepare(Feed.photoFile, pc => { b.textContent = pc + ' %'; }) : null; Feed.gif = null; await Store.call('feed', { method: 'POST', body: { text, file, mentions: mentionIds(ta, text) } }); Feed.photoFile = null; ta._mentions = new Map(); ta.value = ''; ta.style.height = 'auto'; Feed.photo = null; pv.hidden = true; await feedFetch(); feedList(); toast('Publié !'); }
@@ -3324,9 +3369,9 @@ function grpMsgHtml(m, prev) {
     ${mine ? '' : `<span class="avatar initials xs ${m.elu ? 'elu' : ''}">${esc(initialsOf(m.by))}</span>`}
     <div class="grp-col">
       ${mine || (sameAuthor && !newDay) ? '' : `<div class="grp-name">${esc(m.by)}${m.typ === 'elu' ? ' <span class="badge-elu">🗳️ Élu·e</span>' : ''}${m.elu ? ' <span class="badge-cgt">CGT</span>' : ''}</div>`}
-      <div class="grp-bubble ${media && !m.text ? 'media-only' : ''}">${mentionsMe(m) ? '<span class="for-you">📣 Pour vous</span>' : m.all ? '<span class="for-you all">📢 Pour tout le monde</span>' : ''}${media}${m.text ? `<p>${hlMentions(linkify(m.text), m.mentions, m.all)}</p>` : ''}
+      <div class="grp-bubble ${media && !m.text ? 'media-only' : ''}${!media && onlyEmo(m.text) ? ' big-emo' : ''}">${mentionsMe(m) ? '<span class="for-you">📣 Pour vous</span>' : m.all ? '<span class="for-you all">📢 Pour tout le monde</span>' : ''}${media}${m.text ? `<p>${hlMentions(linkify(m.text), m.mentions, m.all)}</p>` : ''}
         <span class="grp-time">${new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}${m.edited ? ' <em class="edited">· modifié</em>' : ''}</span></div>
-      ${mine || canDel ? `<div class="grp-acts">${mine ? `<button type="button" class="grp-del" data-grp-edit="${m.i}">Modifier</button>` : ''}${canDel ? `<button type="button" class="grp-del" data-grp-del="${m.i}" aria-label="Supprimer ce message">Supprimer</button>` : ''}</div>` : ''}
+      ${mine || canDel ? `<div class="grp-acts">${mine && m.text ? `<button type="button" class="grp-del" data-grp-edit="${m.i}">Modifier</button>` : ''}${canDel ? `<button type="button" class="grp-del" data-grp-del="${m.i}" aria-label="Supprimer ce message">Supprimer</button>` : ''}</div>` : ''}
     </div></div>`;
 }
 function grpRender(scroll) {
@@ -3355,7 +3400,7 @@ function grpTick() {
       try {
         const p = await Store.call('group', { query: '&ping=1' + grpQ(room) });
         if (p.v !== Group.v) { await grpLoad(true); grpRender(); }
-        else if (p.n !== Group.n) { const got = await grpLoad(false); if (got) { grpRender(); Group.lastAct = Math.max(Group.lastAct, Date.now() - 30e3); } }
+        else if (p.n !== Group.n) { const got = await grpLoad(false); if (got) { if (Group.msgs.slice(-got).some(m => m.uid !== (Store.user || {}).id)) retroSound('grp'); grpRender(); Group.lastAct = Math.max(Group.lastAct, Date.now() - 30e3); } }
       } catch {}
     }
     grpTick();
@@ -3376,7 +3421,8 @@ function groupView(room = '') {
         <form class="grp-form" id="grp-form">
           <label class="icon-btn grp-attach" title="Photos / vidéos" aria-label="Ajouter des photos ou des vidéos"><input type="file" id="grp-input" accept="image/*,video/*" multiple hidden>${icon('image')}</label>
           <label class="icon-btn grp-attach att-file" title="Fichier (document, PDF, audio…)" aria-label="Joindre un fichier"><input type="file" id="grp-doc" accept="${DOC_ACCEPT}" multiple hidden>📎</label>
-          <button type="button" class="icon-btn gif-btn" data-gif-pick="grp" title="GIF" aria-label="Choisir un GIF">GIF</button>
+          <button type="button" class="icon-btn emo-btn" data-emo="grp" title="Émoticônes et GIF" aria-label="Émoticônes et GIF">😊</button>
+          <button type="button" class="icon-btn mic-btn" data-voice="grp" title="Message vocal" aria-label="Enregistrer un message vocal">🎤</button>
           <textarea id="grp-text" rows="1" maxlength="2000" placeholder="${elus ? 'Message aux élu·e·s… (@)' : 'Message… (@ pour citer)'}" aria-label="Écrire au groupe"></textarea>
           <button class="icon-btn send" id="grp-send" aria-label="Envoyer">${icon('send')}</button>
         </form>
@@ -3408,7 +3454,7 @@ async function groupAfter() {
   $('#grp-file-prev').onclick = e => { const x = e.target.closest('[data-gf-x]'); if (x) { Group.files.splice(Number(x.dataset.gfX), 1); drawFiles(); } };
   $('#grp-file-x').onclick = () => { Group.files = []; drawFiles(); };
   $('#grp-form').onsubmit = async e => {
-    e.preventDefault(); const text = ta.value.trim(); if ((!text && !Group.files.length) || Group.busy) return;
+    e.preventDefault(); const text = emoConvert(ta.value).trim(); if ((!text && !Group.files.length) || Group.busy) return;
     Group.busy = true; const btn = $('#grp-send'); btn.disabled = true; const files = Group.files.slice(); const mentions = mentionIds(ta, text);
     try {
       // 1er envoi : le texte (et la 1re photo) ; les suivantes partent seules, sans texte
@@ -4018,7 +4064,8 @@ function attHtml(m) {
   const url = Store.link(m.fileId, m.fileName), t = m.fileType || '';
   if (/^video\//.test(t)) return `<video src="${url}" controls playsinline preload="metadata"></video>`;
   if (/^image\//.test(t)) return `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${m.gif ? 'GIF' : ''}" loading="lazy"></a>${m.gif ? '<span class="giphy-mark">GIPHY</span>' : ''}`;
-  if (/^audio\//.test(t)) return `<audio src="${url}" controls preload="metadata"></audio><a class="text-link" href="${url}" download="${esc(m.fileName || '')}" style="font-size:12px">${esc(m.fileName || 'Audio')}</a>`;
+  if (/^audio\//.test(t)) return /^Message vocal/.test(m.fileName || '') ? `<div class="voice-msg"><span class="vm-ico">🎤</span><audio src="${url}" controls preload="metadata"></audio></div>`
+    : `<audio src="${url}" controls preload="metadata"></audio><a class="text-link" href="${url}" download="${esc(m.fileName || '')}" style="font-size:12px">${esc(m.fileName || 'Audio')}</a>`;
   return `<a class="file-chip" href="${url}" target="_blank" rel="noopener" download="${esc(m.fileName || '')}"><span class="fc-ext">${esc(docExt(m.fileName))}</span><span class="fc-name">${esc(m.fileName || 'Fichier')}<small>${m.fileSize ? fmtSize(m.fileSize) + ' · ' : ''}Ouvrir / télécharger</small></span></a>`;
 }
 
@@ -4062,6 +4109,130 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-gif-pick]'); if (b) { e.preventDefault(); gifPicker(b.dataset.gifPick); return; }
   const c = e.target.closest('[data-gp-q]'); if (c) { $('#gp-q').value = c.dataset.gpQ; gifLoad(c.dataset.gpQ); return; }
   const it = e.target.closest('[data-gp]'); if (it) { const g = GIFP.items[Number(it.dataset.gp)]; if (g) gifSend(g); }
+});
+
+/* =========================================================================
+   Message vocal : 🎤 → enregistrement (1 min max) → Envoyer / Annuler.
+   Le son part comme une pièce jointe audio (stockage direct, gratuit).
+   ========================================================================= */
+const VOICE = { rec: null, chunks: [], t0: 0, timer: null, stream: null, target: '' };
+const fmtDur = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+function voiceBar(target) { return target === 'chat' ? $('#chat-form') : $('#grp-form'); }
+async function voiceStart(target) {
+  if (VOICE.rec) return;
+  if (!navigator.mediaDevices || !window.MediaRecorder) { toast("L'enregistrement vocal n'est pas pris en charge par ce navigateur."); return; }
+  let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch { toast('Micro refusé : autorisez le micro pour ce site dans les réglages du téléphone.'); return; }
+  const type = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+  const rec = new MediaRecorder(stream, type ? { mimeType: type, audioBitsPerSecond: 48000 } : undefined);
+  Object.assign(VOICE, { rec, chunks: [], t0: Date.now(), stream, target, send: false });
+  rec.ondataavailable = e => { if (e.data && e.data.size) VOICE.chunks.push(e.data); };
+  rec.onstop = () => voiceDone();
+  rec.start(500);
+  const form = voiceBar(target); form.classList.add('recording');
+  form.insertAdjacentHTML('beforeend', `<div class="voice-bar" id="voice-bar"><span class="vb-dot"></span><span class="vb-t" id="vb-t">0:00 / 1:00</span><span class="vb-l">Enregistrement…</span>
+    <button type="button" class="btn btn-light btn-sm" data-voice-x>Annuler</button><button type="button" class="btn btn-red btn-sm" data-voice-send>${icon('send')}Envoyer</button></div>`);
+  VOICE.timer = setInterval(() => { const d = (Date.now() - VOICE.t0) / 1000; const el = $('#vb-t'); if (el) el.textContent = fmtDur(d) + ' / 1:00'; if (d >= 60) { toast('1 minute atteinte : message vocal envoyé.'); voiceStop(true); } }, 250);
+}
+function voiceStop(send) { if (!VOICE.rec) return; VOICE.send = send; clearInterval(VOICE.timer); try { VOICE.rec.stop(); } catch { voiceDone(); } }
+async function voiceDone() {
+  const { chunks, stream, target, send, t0 } = VOICE; const rec = VOICE.rec; VOICE.rec = null;
+  stream && stream.getTracks().forEach(t => t.stop());
+  const form = voiceBar(target); form && form.classList.remove('recording'); $('#voice-bar')?.remove();
+  const dur = (Date.now() - t0) / 1000;
+  if (!send) return;
+  if (dur < 1 || !chunks.length) { toast('Message vocal trop court.'); return; }
+  const type = ((rec && rec.mimeType) || chunks[0].type || 'audio/webm').split(';')[0];
+  const ext = /mp4|aac|m4a/.test(type) ? 'm4a' : /ogg/.test(type) ? 'ogg' : 'webm';
+  const fileObj = new File(chunks, `Message vocal (${fmtDur(dur)}).${ext}`, { type });
+  try {
+    toast('Envoi du message vocal…');
+    const file = await mediaPrepare(fileObj);
+    if (target === 'chat') { const body = { text: '', file }; if (Chat.mode === 'thread') body.to = Chat.uid; const r = await Store.call('chat', { method: 'POST', query: '&op=send', body }); chatAdd([r.msg]); Chat.n = Math.max(Chat.n, r.n); Chat.lastAct = Date.now(); }
+    else { await Store.call('group', { method: 'POST', query: grpQ(), body: { text: '', file } }); await grpLoad(false); grpRender(true); Group.lastAct = Date.now(); grpTick(); }
+    toast('Message vocal envoyé.');
+  } catch (x) { toast(x.message); }
+}
+document.addEventListener('click', e => {
+  const v = e.target.closest('[data-voice]'); if (v) { e.preventDefault(); voiceStart(v.dataset.voice); return; }
+  if (e.target.closest('[data-voice-x]')) { voiceStop(false); return; }
+  if (e.target.closest('[data-voice-send]')) { voiceStop(true); }
+});
+window.addEventListener('hashchange', () => { if (VOICE.rec) voiceStop(false); });
+
+/* =========================================================================
+   Touche rétro (esprit messageries des années 2000) : codes d'émoticônes
+   à taper ( :) ;) :D (Y) (L)… ), panneau d'émoticônes, sons et « Wizz ».
+   Les sons sont créés par le navigateur (aucun son d'origine copié).
+   ========================================================================= */
+const EMO_CODES = [[':-)', '🙂'], [':)', '🙂'], [':-D', '😃'], [':D', '😃'], [';-)', '😉'], [';)', '😉'], [':-(', '🙁'], [':(', '🙁'], [':-P', '😛'], [':P', '😛'], [':p', '😛'],
+  [':-O', '😮'], [':O', '😮'], [':o', '😮'], [":'(", '😢'], [':@', '😠'], [':$', '😳'], [':S', '😕'], [':s', '😕'], [':|', '😐'], ['8-)', '😎'], ['(H)', '😎'], ['(A)', '😇'], ['(6)', '😈'],
+  ['(Y)', '👍'], ['(y)', '👍'], ['(N)', '👎'], ['(n)', '👎'], ['(L)', '❤️'], ['(l)', '❤️'], ['(U)', '💔'], ['(K)', '💋'], ['(F)', '🌹'], ['(*)', '⭐'], ['(S)', '🌙'], ['(#)', '☀️'],
+  ['(C)', '☕'], ['(B)', '🍺'], ['(^)', '🎂'], ['(G)', '🎁'], ['(P)', '📷'], ['(E)', '✉️'], ['(T)', '📞'], ['(M)', '💬'], ['(8)', '🎵'], ['(I)', '💡'], ['(Z)', '👦'], ['(X)', '👧'], ['(%)', '🤝'], ['(O)', '⏰'], ['(W)', '🥀'], ['(D)', '🍸'], ['(pi)', '🍕'], ['(au)', '🚗'], ['(ap)', '✈️'], ['(mp)', '📱'], ['(co)', '💻'], ['(st)', '🌧️'], ['(li)', '⚡'], ['(so)', '⚽'], ['(brb)', '⏳'], ['(fist)', '✊']];
+const EMO_CATS = [['😊', 'Smileys', '🙂 😃 😄 😁 😆 😂 🤣 😉 😊 😇 🥰 😍 😘 😋 😛 😜 🤪 😎 🤩 🥳 😏 😐 😑 😶 🙄 😬 😮 😯 😲 😳 🥺 😢 😭 😤 😠 😡 🤬 😱 😨 😰 😥 😓 🤗 🤔 🤭 🤫 😴 🤤 😪 😵 🤯 🤠 😷 🤒 🤕 🤢 🤮 😈 👻 💩 🤡'],
+  ['👍', 'Gestes', '👍 👎 👏 🙌 👐 🤝 🙏 ✊ 👊 🤛 🤜 ✌️ 🤞 🤟 🤘 👌 🤌 👈 👉 👆 👇 ☝️ ✋ 🤚 🖐️ 🖖 👋 🤙 💪 🫶 🤲 ✍️'],
+  ['❤️', 'Cœurs', '❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ♥️ 💋 🌹 🥀 💐'],
+  ['🎉', 'Fête & lutte', '🎉 🎊 🥳 🎂 🎁 🎈 🍾 🥂 🍻 🍺 ☕ 🍕 🍔 🍟 🥐 📣 📢 ✊ 🚩 🔥 ⭐ 🌟 ✨ 💯 🏆 🥇 ⚽ 🎵 🎶 💡 📌 📅 ⏰ ✅ ❌ ⚠️ 💬 📞 ✉️ 📷 🚗 🏖️ 🌞 🌧️ ⚡ ❄️'],
+  ['(Y)', 'Codes rétro', '']];
+function emoConvert(t) {
+  let out = String(t || '');
+  for (const [c, e] of EMO_CODES) { const rx = new RegExp('(^|\\s)' + c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=$|\\s|[.,!?])', 'g'); out = out.replace(rx, '$1' + e); }
+  return out;
+}
+function emoText(t) { return emoConvert(t); } // codes rétro aussi convertis à l'affichage (anciens messages)
+const onlyEmo = t => { const v = String(t || '').trim(); return !!v && v.length <= 12 && /^(\p{Extended_Pictographic}|\p{Emoji_Component}|‍|️|\s)+$/u.test(v); };
+/* Sons (Web Audio : bips synthétisés, rien de copié) */
+const RETRO = { ctx: null };
+const soundOn = () => ls.get('cse-sound', 1) !== 0;
+function actx() { try { RETRO.ctx = RETRO.ctx || new (window.AudioContext || window.webkitAudioContext)(); if (RETRO.ctx.state === 'suspended') RETRO.ctx.resume(); return RETRO.ctx; } catch { return null; } }
+['pointerdown', 'keydown'].forEach(t => document.addEventListener(t, () => { if (!RETRO.ctx) actx(); }, { once: true, passive: true }));
+function tone(c, f, t0, d, type = 'sine', v = .18, f2) {
+  const o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.setValueAtTime(f, c.currentTime + t0); if (f2) o.frequency.exponentialRampToValueAtTime(f2, c.currentTime + t0 + d);
+  g.gain.setValueAtTime(0, c.currentTime + t0); g.gain.linearRampToValueAtTime(v, c.currentTime + t0 + .015); g.gain.exponentialRampToValueAtTime(.001, c.currentTime + t0 + d);
+  o.connect(g).connect(c.destination); o.start(c.currentTime + t0); o.stop(c.currentTime + t0 + d + .05);
+}
+function retroSound(kind) {
+  if (!soundOn() || document.visibilityState !== 'visible') return; const c = actx(); if (!c) return;
+  if (kind === 'wizz') { for (let k = 0; k < 6; k++) tone(c, k % 2 ? 140 : 110, k * .07, .09, 'square', .12); tone(c, 880, .45, .25, 'triangle', .14, 440); }
+  else if (kind === 'grp') { tone(c, 988, 0, .18, 'sine', .14); tone(c, 1319, .1, .28, 'sine', .12); }
+  else { tone(c, 784, 0, .16, 'triangle', .16); tone(c, 1175, .12, .3, 'triangle', .14); tone(c, 1568, .24, .35, 'sine', .08); } // « ding-dong » d'arrivée
+}
+function retroWizz() {
+  retroSound('wizz'); try { navigator.vibrate && navigator.vibrate([90, 50, 90, 50, 160]); } catch {}
+  const el = $('#chat-panel') || document.body; el.classList.remove('wizzing'); void el.offsetWidth; el.classList.add('wizzing'); setTimeout(() => el.classList.remove('wizzing'), 900);
+}
+async function sendWizz() {
+  try { const body = { text: '', wizz: true }; if (Chat.mode === 'thread') body.to = Chat.uid; const r = await Store.call('chat', { method: 'POST', query: '&op=send', body }); chatAdd([r.msg]); Chat.n = Math.max(Chat.n, r.n); retroWizz(); }
+  catch (x) { toast(x.message); }
+}
+/* Panneau d'émoticônes (+ GIF, + Wizz dans la messagerie privée) */
+function emoPanel(target, btn) {
+  const form = target === 'chat' ? $('#chat-form') : $('#grp-form'); if (!form) return;
+  let pop = form.querySelector('.emo-pop'); if (pop) { pop.remove(); return; }
+  const ta = form.querySelector('textarea');
+  form.insertAdjacentHTML('beforeend', `<div class="emo-pop" role="dialog" aria-label="Émoticônes">
+    <div class="emo-tabs">${EMO_CATS.map(([i, l], k) => `<button type="button" class="emo-tab ${k ? '' : 'on'}" data-emo-tab="${k}" title="${l}">${i}</button>`).join('')}
+      <button type="button" class="emo-tab emo-gif" data-gif-pick="${target}" title="GIF">GIF</button>${target === 'chat' ? '<button type="button" class="emo-tab emo-wizz" data-wizz title="Envoyer un Wizz">📳 Wizz</button>' : ''}</div>
+    <div class="emo-grid" id="emo-grid-${target}"></div>
+    <div class="emo-foot"><label class="emo-sound"><input type="checkbox" data-sound ${soundOn() ? 'checked' : ''}> 🔊 Sons</label><small>Astuce : tapez :) ;) :D (Y) (L)… comme avant !</small></div></div>`);
+  pop = form.querySelector('.emo-pop');
+  const draw = k => {
+    const g = pop.querySelector('.emo-grid'); pop.querySelectorAll('.emo-tab[data-emo-tab]').forEach(b => b.classList.toggle('on', b.dataset.emoTab == k));
+    if (EMO_CATS[k][1] === 'Codes rétro') g.innerHTML = `<div class="emo-codes">${EMO_CODES.filter(([c], i, a) => a.findIndex(x => x[1] === EMO_CODES[i][1]) === i).map(([c, e]) => `<button type="button" class="emo-code" data-emo-ins="${e}"><span>${e}</span><code>${esc(c)}</code></button>`).join('')}</div>`;
+    else g.innerHTML = EMO_CATS[k][2].split(' ').map(e => `<button type="button" class="emo-i" data-emo-ins="${e}">${e}</button>`).join('');
+  };
+  draw(0);
+  pop.addEventListener('click', e => {
+    const t = e.target.closest('[data-emo-tab]'); if (t) { draw(Number(t.dataset.emoTab)); return; }
+    const i = e.target.closest('[data-emo-ins]'); if (i && ta) { const p = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, p) + i.dataset.emoIns + ta.value.slice(ta.selectionEnd ?? p); ta.focus(); const np = p + i.dataset.emoIns.length; ta.setSelectionRange(np, np); ta.dispatchEvent(new Event('input')); return; }
+    if (e.target.closest('[data-wizz]')) { pop.remove(); sendWizz(); return; }
+    if (e.target.closest('[data-gif-pick]')) pop.remove();
+  });
+  pop.querySelector('[data-sound]').onchange = e => { ls.set('cse-sound', e.target.checked ? 1 : 0); if (e.target.checked) retroSound('msg'); };
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-emo]'); if (b) { e.preventDefault(); emoPanel(b.dataset.emo, b); return; }
+  if (!e.target.closest('.emo-pop')) document.querySelectorAll('.emo-pop').forEach(p => p.remove());
 });
 
 </script>
