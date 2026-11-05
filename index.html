@@ -1519,6 +1519,7 @@ body.wizzing,#chat-panel.wizzing{animation:wizzBig .95s cubic-bezier(.36,.07,.19
 .post-actu small{display:block;font-size:13.5px;line-height:1.4;color:#5b4660}
 .post-actu .pa-go{display:inline-block;margin-top:8px;font-weight:800;color:#E30613;font-size:14px}
 .post-actu small{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.info-card.navy h3 svg{color:#FFD200;stroke:#FFD200}
 
 </style>
 </head>
@@ -3091,8 +3092,6 @@ function followBlock(c) {
 }
 function contactCards(c) {
   return `
-    <div class="info-card chat-card"><h3>${icon('chat')}Discuter en direct</h3><p>Écrivez à la section dans la messagerie instantanée, comme sur Messenger.</p>
-      <button class="btn btn-magenta" data-chat-open>${icon('chat')}Ouvrir la messagerie</button></div>
     ${c.email ? `<div class="info-card navy"><h3 style="color:#fff">${icon('mail')}Email de la section</h3><p><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></p></div>` : ''}
     ${c.telephone ? `<div class="info-card navy"><h3 style="color:#fff">${icon('phone')}Téléphone</h3><p><a href="tel:${esc(telHref(c.telephone))}">${esc(c.telephone)}</a>${c.tel_note ? `<br><span class="tel-note">${esc(c.tel_note)}</span>` : ''}</p></div>` : ''}
     ${c.responsable ? `<div class="info-card"><h3>${icon('user')}Votre responsable</h3><p>${esc(c.responsable)}${c.responsable_tel ? `<br><a href="tel:${esc(telHref(c.responsable_tel))}"><strong>${esc(c.responsable_tel)}</strong></a>` : ''}</p></div>` : ''}
