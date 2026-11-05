@@ -163,7 +163,7 @@ function body(req) { if (req.body && typeof req.body === 'object') return req.bo
 function send(res, status, obj) { res.status(status).setHeader('Cache-Control', 'no-store'); res.json(obj); }
 const fail = (status, msg) => Object.assign(new Error(msg), { status });
 const clip = (v, f) => String(v ?? '').trim().slice(0, LONG.includes(f) ? 8000 : 300);
-const publicUser = u => u && ({ id: u.id, email: u.email, prenom: u.prenom, nom: u.nom, service: u.service, role: u.role, status: u.status, created: u.created, owner: !!u.owner });
+const publicUser = u => u && ({ id: u.id, email: u.email, prenom: u.prenom, nom: u.nom, service: u.service, role: u.role, status: u.status, created: u.created, owner: !!u.owner, type: u.type === 'elu' ? 'elu' : 'salarie' });
 async function rateLimit(req, key, max) {
   const ip = String(req.headers['x-forwarded-for'] || 'x').split(',')[0].trim();
   const k = `cse:rl:${key}:${ip}`;
@@ -173,7 +173,7 @@ async function rateLimit(req, key, max) {
 async function getUser(id) { const v = await redis('HGET', 'cse:users', id); return v ? JSON.parse(v) : null; }
 async function allUsers() { const f = (await redis('HGETALL', 'cse:users')) || []; const o = []; for (let i = 1; i < f.length; i += 2) o.push(JSON.parse(f[i])); return o; }
 async function saveUser(u) { await redis('HSET', 'cse:users', u.id, JSON.stringify(u)); }
-const ADMIN_USER = { id: 'admin', email: ADMIN_EMAIL, prenom: 'Administrateur', nom: 'CGT', role: 'elu', status: 'active', created: '2026-01-01T00:00:00.000Z', owner: true, principal: true };
+const ADMIN_USER = { id: 'admin', email: ADMIN_EMAIL, prenom: 'Administrateur', nom: 'CGT', role: 'elu', status: 'active', created: '2026-01-01T00:00:00.000Z', owner: true, principal: true, type: 'elu' };
 
 /* Session courante : vérifie le jeton ET que le compte est toujours actif */
 async function session(req) {
@@ -245,7 +245,8 @@ async function dropTarget(t) {
 
 /* ---------- Discussion de groupe (salon commun à tous les membres) ---------- */
 const GROUP_MAX = 500, GROUP_KEEP = 400;
-async function groupMeta() { const v = await redis('GET', 'cse:gmeta'); return v ? JSON.parse(v) : { n: 0, base: 0, v: 0 }; }
+async function groupMeta(room = '') { const v = await redis('GET', 'cse:gmeta' + room); return v ? JSON.parse(v) : { n: 0, base: 0, v: 0 }; }
+const isEluCse = u => !!u && (u.type === 'elu' || u.role === 'elu');
 async function saveMedia(f) {
   const data = String(f && f.data || '');
   const m = data.match(/^data:((image\/(jpeg|png|webp|gif))|(video\/(mp4|webm|quicktime)));base64,/);
@@ -368,6 +369,8 @@ const A = {
       throw fail(403, 'Seul le compte principal (ou une personne qui a la main) peut gérer les administrateurs.');
     if (u.id === me.id && ['salarie', 'unowner', 'suspend', 'delete'].includes(b.op)) throw fail(400, 'Vous ne pouvez pas retirer vos propres droits.');
     if (b.op === 'approve') u.status = 'active';
+    else if (b.op === 'type_elu') u.type = 'elu';
+    else if (b.op === 'type_salarie') u.type = 'salarie';
     else if (b.op === 'owner') { if (u.status !== 'active') throw fail(400, "Validez d'abord ce compte."); u.role = 'elu'; u.owner = true; }
     else if (b.op === 'unowner') u.owner = false;
     else if (b.op === 'suspend') u.status = 'suspended';
@@ -579,43 +582,47 @@ const A = {
 
   /* Discussion de groupe : tous les membres connectés */
   async group(req) {
+    // deux salons : '' = discussion globale (tout le monde), ':elus' = discussion réservée aux élu·e·s
+    const room = req.query.room === 'elus' ? ':elus' : ''; const LK = 'cse:group' + room, MK = 'cse:gmeta' + room;
     if (req.method === 'GET' && req.query.ping) { // vérification légère : jeton signé seulement, 1 seule lecture
       if (!readToken(req)) throw fail(401, 'Veuillez vous connecter.');
-      const m = await groupMeta(); return { n: m.n, v: m.v || 0 };
+      if (room && !isEluCse(await session(req))) throw fail(403, 'Réservé aux élu·e·s.');
+      const m = await groupMeta(room); return { n: m.n, v: m.v || 0 };
     }
     const u = await need(req);
+    if (room && !isEluCse(u)) throw fail(403, 'Réservé aux élu·e·s.');
     if (req.method === 'GET') {
-      const m = await groupMeta(); const since = req.query.since !== undefined ? Number(req.query.since) : Math.max(m.base, m.n - 60);
+      const m = await groupMeta(room); const since = req.query.since !== undefined ? Number(req.query.since) : Math.max(m.base, m.n - 60);
       if (since >= m.n) return { n: m.n, v: m.v || 0, base: m.base, messages: [] };
       const from = Math.max(0, since - m.base);
-      const raw = (await redis('LRANGE', 'cse:group', from, -1)) || [];
+      const raw = (await redis('LRANGE', LK, from, -1)) || [];
       return { n: m.n, v: m.v || 0, base: m.base, messages: raw.map(x => { try { return JSON.parse(x); } catch { return null; } }).filter(Boolean) };
     }
     if (req.method === 'DELETE') {
-      const i = Number(req.query.i); const m = await groupMeta();
+      const i = Number(req.query.i); const m = await groupMeta(room);
       if (!(i >= m.base && i < m.n)) throw fail(404, 'Message introuvable.');
-      const raw = await redis('LINDEX', 'cse:group', i - m.base); const msg = raw && JSON.parse(raw);
+      const raw = await redis('LINDEX', LK, i - m.base); const msg = raw && JSON.parse(raw);
       if (!msg) throw fail(404, 'Message introuvable.');
       if (msg.uid !== u.id && u.role !== 'elu') throw fail(403, 'Vous ne pouvez supprimer que vos propres messages.');
       if (msg.fileId) await redis('DEL', `cse:file:${msg.fileId}`);
-      await redis('LSET', 'cse:group', i - m.base, JSON.stringify({ i, uid: msg.uid, by: msg.by, at: msg.at, deleted: true }));
-      m.v = (m.v || 0) + 1; await redis('SET', 'cse:gmeta', JSON.stringify(m));
+      await redis('LSET', LK, i - m.base, JSON.stringify({ i, uid: msg.uid, by: msg.by, at: msg.at, deleted: true }));
+      m.v = (m.v || 0) + 1; await redis('SET', MK, JSON.stringify(m));
       return { ok: true };
     }
     const b = body(req); const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
     if (!text && !(b.file && b.file.data)) throw fail(400, 'Message vide.');
     await rateLimit(req, 'grp', 120);
-    const msg = { uid: u.id, by: who(u), elu: u.role === 'elu', text, at: new Date().toISOString() };
+    const msg = { uid: u.id, by: who(u), elu: u.role === 'elu', typ: u.type === 'elu' ? 'elu' : '', text, at: new Date().toISOString() };
     if (b.file && b.file.data) Object.assign(msg, await saveMedia(b.file));
-    const m = await groupMeta(); msg.i = m.n;
-    const len = Number(await redis('RPUSH', 'cse:group', JSON.stringify(msg)));
+    const m = await groupMeta(room); msg.i = m.n;
+    const len = Number(await redis('RPUSH', LK, JSON.stringify(msg)));
     m.n = m.base + len;
     if (len > GROUP_MAX) { // on garde les GROUP_KEEP derniers messages et on libère les fichiers des plus anciens
-      const old = (await redis('LRANGE', 'cse:group', 0, len - GROUP_KEEP - 1)) || [];
+      const old = (await redis('LRANGE', LK, 0, len - GROUP_KEEP - 1)) || [];
       for (const x of old) { try { const o = JSON.parse(x); if (o.fileId) await redis('DEL', `cse:file:${o.fileId}`); } catch {} }
-      await redis('LTRIM', 'cse:group', len - GROUP_KEEP, -1); m.base = m.n - GROUP_KEEP;
+      await redis('LTRIM', LK, len - GROUP_KEEP, -1); m.base = m.n - GROUP_KEEP;
     }
-    await redis('SET', 'cse:gmeta', JSON.stringify(m));
+    await redis('SET', MK, JSON.stringify(m));
     return { n: m.n, msg };
   },
 

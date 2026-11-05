@@ -1172,6 +1172,17 @@ body:has(.bil-bar:not([hidden])) #app{padding-bottom:90px}
 .bil-dform input{padding:9px 10px;border:1.5px solid var(--line);border-radius:8px;font:inherit;font-weight:400;background:#fff;min-width:0}
 .hot-txt{color:#B8050F}
 @media (max-width:720px){.bil-dform{grid-template-columns:1fr}.bil-dform .btn{width:100%;justify-content:center}}
+/* Discussions globale / élus + type élu·e */
+.comm-tabs.four a{font-size:13.5px;padding:10px 6px}
+.tab-emo{font-size:17px;line-height:1}
+.comm-tabs a.tab-elus.on{background:linear-gradient(120deg,#0E1A33,#3A1A5C)}
+.grp-elus .grp-head{background:linear-gradient(120deg,#0E1A33,#3A1A5C);color:#fff}
+.grp-elus .grp-head small{color:rgba(255,255,255,.8)}
+.grp-elus .grp-ico{background:#fff;font-size:20px}
+.badge-elu{display:inline-block;background:#EDE5FA;color:#4B2A8A;font-size:10.5px;font-weight:800;border-radius:999px;padding:1px 7px;margin-left:4px}
+.pill.elu-t{background:#EDE5FA;color:#4B2A8A}
+.pill.sal-t{background:#E8F2EC;color:#16743F}
+@media (max-width:720px){.comm-tabs.four a{font-size:11px;padding:8px 2px;gap:3px}.comm-tabs.four a svg{width:17px;height:17px}}
 
 </style>
 </head>
@@ -1968,9 +1979,9 @@ const Views = {
     const others = users.filter(u => u.status !== 'pending').sort((a, b) => (a.nom || '').localeCompare(b.nom || ''));
     const userRow = u => `<div class="user-row"><div class="avatar initials sm">${esc(initials(u))}</div><div class="u-info"><strong>${esc(fullName(u))}</strong><small>${esc(u.email)}${u.service ? ' · ' + esc(u.service) : ''} · inscrit·e le ${new Date(u.created).toLocaleDateString('fr-FR')}</small></div>
       <div class="u-actions">${u.status === 'pending' ? `<button class="btn btn-red btn-sm" data-uop="approve" data-uid="${u.id}">${icon('check')}Valider</button><button class="btn btn-light btn-sm" data-uop="delete" data-uid="${u.id}">Refuser</button>`
-      : `<span class="pill ${u.status !== 'active' ? 'yellow' : u.owner ? 'own' : u.role === 'elu' ? 'adm' : 'green'}">${u.status === 'active' ? (u.owner ? '👑 ' : '') + roleLabel(u.role, u.owner) : 'Suspendu'}</span>
+      : `<span class="pill ${u.type === 'elu' ? 'elu-t' : 'sal-t'}">${u.type === 'elu' ? '🗳️ Élu·e' : '👤 Salarié·e'}</span>${u.role === 'elu' || u.status !== 'active' ? `<span class="pill ${u.status !== 'active' ? 'yellow' : u.owner ? 'own' : 'adm'}">${u.status === 'active' ? (u.owner ? '👑 ' : '🛠️ ') + roleLabel(u.role, u.owner) : 'Suspendu'}</span>` : ''}
          ${iOwn && u.status === 'active' && u.id !== (Store.user || {}).id ? `<button type="button" class="btn btn-light btn-sm role-btn" data-role-btn="${u.id}" aria-expanded="false">👑 Rôle</button>` : ''}
-         ${u.role === 'elu' && !iOwn ? '' : `<select class="u-select" data-uid="${u.id}" aria-label="Actions pour ${esc(fullName(u))}"><option value="">Actions…</option>${iOwn && u.status === 'active' && u.id !== (Store.user || {}).id ? `<optgroup label="Rôle">${u.role !== 'elu' || u.owner ? `<option value="${u.owner ? 'unowner' : 'elu'}">🛠️ Nommer administrateur</option>` : ''}${!u.owner ? '<option value="owner">👑 Nommer administrateur avec la main</option>' : ''}${u.role === 'elu' ? '<option value="salarie">👤 Repasser salarié·e</option>' : ''}</optgroup><optgroup label="Compte">` : ''}${u.status === 'active' ? '<option value="suspend">Suspendre l’accès</option>' : '<option value="approve">Réactiver</option>'}<option value="reset">Réinitialiser le mot de passe</option><option value="delete">Supprimer le compte</option>${iOwn && u.status === 'active' && u.id !== (Store.user || {}).id ? '</optgroup>' : ''}</select>`}`}</div>
+         ${u.role === 'elu' && !iOwn ? '' : `<select class="u-select" data-uid="${u.id}" aria-label="Actions pour ${esc(fullName(u))}"><option value="">Actions…</option>${iOwn && u.status === 'active' && u.id !== (Store.user || {}).id ? `<optgroup label="Rôle">${u.role !== 'elu' || u.owner ? `<option value="${u.owner ? 'unowner' : 'elu'}">🛠️ Nommer administrateur</option>` : ''}${!u.owner ? '<option value="owner">👑 Nommer administrateur avec la main</option>' : ''}${u.role === 'elu' ? '<option value="salarie">👤 Repasser salarié·e</option>' : ''}</optgroup>` : ''}<optgroup label="Type">${u.type === 'elu' ? '<option value="type_salarie">👤 Salarié·e (pas élu·e)</option>' : '<option value="type_elu">🗳️ Élu·e</option>'}</optgroup><optgroup label="Compte">${u.status === 'active' ? '<option value="suspend">Suspendre l’accès</option>' : '<option value="approve">Réactiver</option>'}<option value="reset">Réinitialiser le mot de passe</option><option value="delete">Supprimer le compte</option></optgroup></select>`}`}</div>
       ${iOwn && u.status === 'active' && u.id !== (Store.user || {}).id ? `<div class="role-pick" id="rp-${u.id}" hidden><p>Choisir le rôle de <strong>${esc(fullName(u))}</strong> :</p>
         ${[['salarie', '👤', 'Salarié·e', 'Accès normal au site'], ['elu', '🛠️', 'Administrateur', 'Publie, lit les messages, gère adhésions, billetterie et comptes'], ['owner', '👑', 'Administrateur avec la main', 'Peut en plus attribuer les rôles']].map(([r, e, l, d]) => { const cur = (u.owner ? 'owner' : u.role === 'elu' ? 'elu' : 'salarie') === r; return `<button type="button" class="role-opt ${cur ? 'on' : ''}" data-role-set="${r}" data-uid="${u.id}" data-cur="${u.owner ? 'owner' : u.role}" ${cur ? 'disabled' : ''}><span>${e}</span><b>${l}</b><small>${cur ? 'Rôle actuel' : d}</small></button>`; }).join('')}</div>` : ''}</div>`;
     const iOwn = !!(Store.user && Store.user.owner);
@@ -2009,12 +2020,12 @@ const Views = {
 };
 
 async function userAction(id, op) {
-  const labels = { delete: 'Supprimer définitivement ce compte ?', suspend: 'Suspendre l’accès de ce compte ?', elu: 'Nommer cette personne administrateur ? Elle pourra publier, lire les messages, traiter adhésions et billetterie, et valider les comptes.', salarie: 'Retirer les droits d’administrateur (repasser salarié·e) ?', owner: 'Donner la main sur les administrateurs à cette personne ? Elle pourra, comme vous, nommer et retirer des administrateurs.', unowner: 'Lui retirer la main ? Elle restera administrateur.' };
+  const labels = { type_elu: 'Indiquer que cette personne est élu·e ? Elle aura accès à la discussion des élus.', type_salarie: 'Indiquer que cette personne est salarié·e (non élu·e) ? Elle n’aura plus accès à la discussion des élus.', delete: 'Supprimer définitivement ce compte ?', suspend: 'Suspendre l’accès de ce compte ?', elu: 'Nommer cette personne administrateur ? Elle pourra publier, lire les messages, traiter adhésions et billetterie, et valider les comptes.', salarie: 'Retirer les droits d’administrateur (repasser salarié·e) ?', owner: 'Donner la main sur les administrateurs à cette personne ? Elle pourra, comme vous, nommer et retirer des administrateurs.', unowner: 'Lui retirer la main ? Elle restera administrateur.' };
   if (labels[op] && !confirm(labels[op])) return;
   try {
     const r = await Store.userOp(id, op);
     if (op === 'reset' && r && r.temp) alert(`Nouveau mot de passe provisoire : ${r.temp}\n\nCommuniquez-le à la personne : elle pourra le changer dans « Mon compte ».`);
-    toast({ approve: 'Compte validé.', delete: 'Compte supprimé.', suspend: 'Accès suspendu.', elu: 'Administrateur nommé.', salarie: 'Droits d’administrateur retirés.', owner: 'Main donnée sur les administrateurs.', unowner: 'Main retirée.', reset: 'Mot de passe réinitialisé.' }[op] || 'OK');
+    toast({ approve: 'Compte validé.', delete: 'Compte supprimé.', suspend: 'Accès suspendu.', elu: 'Administrateur nommé.', type_elu: 'Type : élu·e.', type_salarie: 'Type : salarié·e.', salarie: 'Droits d’administrateur retirés.', owner: 'Main donnée sur les administrateurs.', unowner: 'Main retirée.', reset: 'Mot de passe réinitialisé.' }[op] || 'OK');
     render();
   } catch (e) { toast(e.message); }
 }
@@ -2970,7 +2981,8 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 Object.assign(Views, {
   async communaute(id) {
     if (Store.mode === 'demo') return `<div class="wrap page-body" style="padding-top:40px">${emptyState('', 'Communauté', 'Disponible une fois le stockage en ligne branché.')}</div>`;
-    if (id === 'discussion') return groupView();
+    if (id === 'discussion') return groupView('');
+    if (id === 'elus') return isEluCse(Store.user) ? (groupUnreadCheck(), groupView('elus')) : `<div class="wrap page-body" style="padding-top:40px">${emptyState('', 'Réservé aux élu·e·s', 'Cette discussion est réservée aux élu·e·s.')}<p style="text-align:center"><a class="btn btn-red" href="#/communaute/discussion">Aller à la discussion globale</a></p></div>`;
     if (id === 'contact') return contactView();
     await Promise.all([feedFetch(), groupUnreadCheck()]);
     const me = Store.user || {};
@@ -3018,14 +3030,19 @@ document.addEventListener('click', async e => {
    Rafraîchissement économe : 4 s quand on écrit / lit, puis 15 s, puis 60 s ;
    rien quand l'écran est caché ou qu'on quitte l'onglet.
    ========================================================================= */
-const Group = { n: 0, v: 0, msgs: [], timer: null, lastAct: 0, busy: false, file: null, unread: 0 };
-const grpSeenKey = () => 'cse-grp-seen:' + (Store.user ? Store.user.id : '');
+const Group = { room: '', n: 0, v: 0, msgs: [], timer: null, lastAct: 0, busy: false, file: null, unread: 0, unreadElus: 0 };
+const grpSeenKey = (room = Group.room) => 'cse-grp-seen' + (room ? '-' + room : '') + ':' + (Store.user ? Store.user.id : '');
+const isEluCse = u => !!u && (u.type === 'elu' || u.role === 'elu');
+const grpQ = (room = Group.room) => room ? '&room=' + room : '';
+const isGrpRoute = r => r.name === 'communaute' && (r.id === 'discussion' || r.id === 'elus');
 
 function commTabs(active) {
-  const unread = Group.unread && active !== 'discussion' ? `<span class="tab-badge">${Group.unread > 99 ? '99+' : Group.unread}</span>` : '';
-  return `<nav class="comm-tabs" aria-label="Communauté">
+  const badge = n => n ? `<span class="tab-badge">${n > 99 ? '99+' : n}</span>` : '';
+  const elu = isEluCse(Store.user);
+  return `<nav class="comm-tabs ${elu ? 'four' : ''}" aria-label="Communauté">
     <a href="#/communaute" class="${active === 'fil' ? 'on' : ''}">${icon('users')}Messagerie</a>
-    <a href="#/communaute/discussion" class="${active === 'discussion' ? 'on' : ''}">${icon('chat')}Discussion de groupe${unread}</a>
+    <a href="#/communaute/discussion" class="${active === 'discussion' ? 'on' : ''}">${icon('chat')}Discussion globale${active !== 'discussion' ? badge(Group.unread) : ''}</a>
+    ${elu ? `<a href="#/communaute/elus" class="tab-elus ${active === 'elus' ? 'on' : ''}"><span class="tab-emo">🗳️</span>Discussion élus${active !== 'elus' ? badge(Group.unreadElus) : ''}</a>` : ''}
     <a href="#/communaute/contact" class="${active === 'contact' ? 'on' : ''}">${icon('send')}Nous contacter</a></nav>`;
 }
 async function contactView() {
@@ -3055,7 +3072,8 @@ async function contactView() {
     </div></div>`;
 }
 async function groupUnreadCheck() { // pour le petit compteur sur l'onglet
-  try { const r = await Store.call('group', { query: '&ping=1' }); const seen = Number(ls.get(grpSeenKey(), 0)); Group.unread = Math.max(0, r.n - seen); } catch {}
+  try { const r = await Store.call('group', { query: '&ping=1' }); Group.unread = Math.max(0, r.n - Number(ls.get(grpSeenKey(''), 0))); } catch {}
+  if (isEluCse(Store.user)) try { const r = await Store.call('group', { query: '&ping=1&room=elus' }); Group.unreadElus = Math.max(0, r.n - Number(ls.get(grpSeenKey('elus'), 0))); } catch {}
 }
 
 function grpMsgHtml(m, prev) {
@@ -3070,7 +3088,7 @@ function grpMsgHtml(m, prev) {
   return sep + `<div class="grp-msg ${mine ? 'mine' : ''} ${sameAuthor && !newDay ? 'cont' : ''}" data-i="${m.i}">
     ${mine ? '' : `<span class="avatar initials xs ${m.elu ? 'elu' : ''}">${esc(initialsOf(m.by))}</span>`}
     <div class="grp-col">
-      ${mine || (sameAuthor && !newDay) ? '' : `<div class="grp-name">${esc(m.by)}${m.elu ? ' <span class="badge-cgt">CGT</span>' : ''}</div>`}
+      ${mine || (sameAuthor && !newDay) ? '' : `<div class="grp-name">${esc(m.by)}${m.typ === 'elu' ? ' <span class="badge-elu">🗳️ Élu·e</span>' : ''}${m.elu ? ' <span class="badge-cgt">CGT</span>' : ''}</div>`}
       <div class="grp-bubble ${media && !m.text ? 'media-only' : ''}">${media}${m.text ? `<p>${linkify(m.text)}</p>` : ''}
         <span class="grp-time">${new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span></div>
       ${canDel ? `<button type="button" class="grp-del" data-grp-del="${m.i}" aria-label="Supprimer ce message">Supprimer</button>` : ''}
@@ -3082,10 +3100,10 @@ function grpRender(scroll) {
   box.innerHTML = Group.msgs.length ? Group.msgs.map((m, k) => grpMsgHtml(m, Group.msgs[k - 1])).join('')
     : `<div class="grp-empty">${icon('chat')}<p><strong>Le salon est ouvert !</strong><br>Dites bonjour aux collègues : tous les membres connectés voient les messages en direct.</p></div>`;
   if (scroll || near) box.scrollTop = box.scrollHeight;
-  ls.set(grpSeenKey(), Group.n); Group.unread = 0;
+  ls.set(grpSeenKey(), Group.n); if (Group.room) Group.unreadElus = 0; else Group.unread = 0;
 }
 async function grpLoad(full) {
-  const q = full || !Group.msgs.length ? '' : '&since=' + Group.n;
+  const q = (full || !Group.msgs.length ? '' : '&since=' + Group.n) + grpQ();
   const r = await Store.call('group', { query: q });
   if (full || !Group.msgs.length) Group.msgs = r.messages; else Group.msgs.push(...r.messages.filter(m => !Group.msgs.some(x => x.i === m.i)));
   if (Group.msgs.length > 300) Group.msgs = Group.msgs.slice(-300);
@@ -3094,13 +3112,13 @@ async function grpLoad(full) {
 }
 function grpTick() {
   clearTimeout(Group.timer);
-  const rt = parseRoute(); if (rt.name !== 'communaute' || rt.id !== 'discussion' || !Store.isLogged()) return;
+  const rt = parseRoute(); if (!isGrpRoute(rt) || !Store.isLogged()) return; const room = rt.id === 'elus' ? 'elus' : '';
   const idle = Date.now() - Group.lastAct;
   Group.timer = setTimeout(async () => {
     const r2 = parseRoute();
-    if (document.visibilityState === 'visible' && r2.name === 'communaute' && r2.id === 'discussion') {
+    if (document.visibilityState === 'visible' && isGrpRoute(r2) && (r2.id === 'elus' ? 'elus' : '') === room && Group.room === room) {
       try {
-        const p = await Store.call('group', { query: '&ping=1' });
+        const p = await Store.call('group', { query: '&ping=1' + grpQ(room) });
         if (p.v !== Group.v) { await grpLoad(true); grpRender(); }
         else if (p.n !== Group.n) { const got = await grpLoad(false); if (got) { grpRender(); Group.lastAct = Math.max(Group.lastAct, Date.now() - 30e3); } }
       } catch {}
@@ -3109,22 +3127,24 @@ function grpTick() {
   }, idle < 120e3 ? 4e3 : idle < 600e3 ? 15e3 : 60e3);
 }
 ['pointerdown', 'keydown'].forEach(t => document.addEventListener(t, () => { Group.lastAct = Date.now(); }, { passive: true }));
-document.addEventListener('visibilitychange', () => { const r = parseRoute(); if (document.visibilityState === 'visible' && r.name === 'communaute' && r.id === 'discussion') { Group.lastAct = Date.now(); grpTick(); } });
+document.addEventListener('visibilitychange', () => { const r = parseRoute(); if (document.visibilityState === 'visible' && isGrpRoute(r)) { Group.lastAct = Date.now(); grpTick(); } });
 
-function groupView() {
-  return `<div class="page">${pageHead('Communauté', 'Le salon de discussion de toutes et tous les membres : discutez, rigolez, partagez photos et vidéos.')}
-    <div class="wrap page-body feed-wrap">${commTabs('discussion')}
-      <section class="grp" id="grp" aria-label="Discussion de groupe">
-        <header class="grp-head"><span class="grp-ico">${icon('users')}</span><div><strong>Salon des collègues</strong><small><span class="live-dot"></span>En direct · visible par tous les membres</small></div></header>
+function groupView(room = '') {
+  if (Group.room !== room) Object.assign(Group, { room, n: 0, v: 0, msgs: [], file: null });
+  const elus = room === 'elus';
+  return `<div class="page">${pageHead('Communauté', elus ? 'La discussion réservée aux élu·e·s : préparez vos réunions, échangez en toute confidentialité.' : 'Le salon de discussion de toutes et tous les membres : discutez, rigolez, partagez photos et vidéos.')}
+    <div class="wrap page-body feed-wrap">${commTabs(elus ? 'elus' : 'discussion')}
+      <section class="grp ${elus ? 'grp-elus' : ''}" id="grp" aria-label="${elus ? 'Discussion des élus' : 'Discussion globale'}">
+        <header class="grp-head"><span class="grp-ico">${elus ? '🗳️' : icon('users')}</span><div><strong>${elus ? 'Discussion des élu·e·s' : 'Discussion globale'}</strong><small><span class="live-dot"></span>En direct · ${elus ? '🔒 visible uniquement par les élu·e·s' : 'visible par tous les membres'}</small></div></header>
         <div class="grp-list" id="grp-list" aria-live="polite"><p class="note" style="text-align:center;padding:30px">Chargement…</p></div>
         <div class="grp-file" id="grp-file" hidden><span id="grp-file-prev"></span><button type="button" class="icon-btn" id="grp-file-x" aria-label="Retirer le fichier">${icon('x')}</button></div>
         <form class="grp-form" id="grp-form">
           <label class="icon-btn grp-attach" title="Photo ou vidéo" aria-label="Ajouter une photo ou une vidéo"><input type="file" id="grp-input" accept="image/*,video/*" hidden>${icon('image')}</label>
-          <textarea id="grp-text" rows="1" maxlength="2000" placeholder="Écrire au groupe…" aria-label="Écrire au groupe"></textarea>
+          <textarea id="grp-text" rows="1" maxlength="2000" placeholder="${elus ? 'Écrire aux élu·e·s…' : 'Écrire à tout le monde…'}" aria-label="Écrire au groupe"></textarea>
           <button class="icon-btn send" id="grp-send" aria-label="Envoyer">${icon('send')}</button>
         </form>
       </section>
-      <p class="note feed-rules">Ambiance conviviale et respectueuse : pas d'attaques personnelles ni d'informations confidentielles. Les responsables CGT peuvent retirer un message. Vidéos : 2,4 Mo maximum (sinon, partagez un lien).</p>
+      <p class="note feed-rules">${elus ? '🔒 Seul·e·s les élu·e·s (et les administrateurs) voient cette discussion. ' : ''}Ambiance conviviale et respectueuse : pas d'attaques personnelles ni d'informations confidentielles. Les responsables CGT peuvent retirer un message. Vidéos : 2,4 Mo maximum (sinon, partagez un lien).</p>
     </div></div>`;
 }
 async function groupAfter() {
@@ -3149,7 +3169,7 @@ async function groupAfter() {
     e.preventDefault(); const text = ta.value.trim(); if ((!text && !Group.file) || Group.busy) return;
     Group.busy = true; const btn = $('#grp-send'); btn.disabled = true; const file = Group.file;
     try {
-      await Store.call('group', { method: 'POST', body: { text, file } });
+      await Store.call('group', { method: 'POST', query: grpQ(), body: { text, file } });
       ta.value = ''; ta.style.height = 'auto'; Group.file = null; fileBox.hidden = true;
       await grpLoad(false); grpRender(true); Group.lastAct = Date.now(); grpTick();
     } catch (x) { toast(x.message); } finally { Group.busy = false; btn.disabled = false; ta.focus(); }
@@ -3158,7 +3178,7 @@ async function groupAfter() {
 document.addEventListener('click', async e => {
   const d = e.target.closest('[data-grp-del]'); if (!d) return;
   if (!confirm('Supprimer ce message pour tout le monde ?')) return;
-  try { await Store.call('group', { method: 'DELETE', query: '&i=' + d.dataset.grpDel }); await grpLoad(true); grpRender(); } catch (x) { toast(x.message); }
+  try { await Store.call('group', { method: 'DELETE', query: '&i=' + d.dataset.grpDel + grpQ() }); await grpLoad(true); grpRender(); } catch (x) { toast(x.message); }
 });
 
 /* Démarrage */
