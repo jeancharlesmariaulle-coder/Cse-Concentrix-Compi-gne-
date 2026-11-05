@@ -212,7 +212,7 @@ async function chatPush(uid, msg, metaInit) {
     for (const x of (await redis('LRANGE', chatKey(uid), 0, len - CHAT_KEEP - 1)) || []) { try { const o = JSON.parse(x); if (o.fileId) await delFile(o.fileId); } catch {} }
     await redis('LTRIM', chatKey(uid), len - CHAT_KEEP, -1); meta.base = meta.n - CHAT_KEEP;
   }
-  const shown = msg.wizz ? `📳 ${msg.by || 'Quelqu’un'} vous envoie un Wizz !` : msg.text || (msg.fileId ? (/^image\//.test(msg.fileType || '') ? '📷 Photo' : /^video\//.test(msg.fileType || '') ? '🎬 Vidéo' : /^Message vocal/.test(msg.fileName || '') ? '🎤 Message vocal' : '📎 ' + (msg.fileName || 'Fichier')) : '');
+  const shown = msg.wizz ? `📳 ${msg.by || 'Quelqu’un'} vous envoie un Wizz !` : msg.wink ? `✨ Clin d’œil : ${WINKS[msg.wink] || ''}` : msg.text || (msg.fileId ? (/^image\//.test(msg.fileType || '') ? '📷 Photo' : /^video\//.test(msg.fileType || '') ? '🎬 Vidéo' : /^Message vocal/.test(msg.fileName || '') ? '🎤 Message vocal' : '📎 ' + (msg.fileName || 'Fichier')) : '');
   Object.assign(meta, { lastText: shown.slice(0, 120), lastAt: msg.at, lastFrom: msg.from });
   if (msg.from === 'user') meta.unreadCgt = (meta.unreadCgt || 0) + 1; else meta.unreadUser = (meta.unreadUser || 0) + 1;
   await redis('HSET', 'cse:chats', uid, JSON.stringify(meta));
@@ -277,7 +277,9 @@ const GROUP_MAX = 500, GROUP_KEEP = 400;
 async function groupMeta(room = '') { const v = await redis('GET', 'cse:gmeta' + room); return v ? JSON.parse(v) : { n: 0, base: 0, v: 0 }; }
 const isEluCse = u => !!u && (u.type === 'elu' || u.role === 'elu');
 const fileGiven = f => !!(f && (f.data || f.url || f.gif));
-const GIPHY_RE = /^https:\/\/(media\d?|i)\.giphy\.com\/media\/[\w-]+\/[\w.-]+\.(gif|webp|mp4)(\?[\w=&.-]*)?$/;
+// adresses GIPHY actuelles : /media/v1.<jeton>/<id>/200w.gif (2 à 4 segments)
+const WINKS = { coeur: 'Cœur battant', bisou: 'Gros bisou', rire: 'Fou rire', coucou: 'Coucou !', poing: 'Solidarité', greve: 'On lâche rien', bravo: 'Bravo !', fete: 'C’est la fête', gateau: 'Bon anniversaire', cafe: 'Pause café ?', pluie: 'Coup de blues', dodo: 'Bonne nuit' };
+const GIPHY_RE = /^https:\/\/(media\d?|i)\.giphy\.com\/(?!.*\.\.)(?:[\w.~-]+\/){1,5}[\w.~-]+\.(gif|webp|mp4)$/;
 async function saveMedia(f) {
   if (f && f.gif) { const url = String(f.gif); if (!GIPHY_RE.test(url)) throw fail(400, 'GIF invalide.'); return { fileId: url, fileName: 'GIF', fileType: 'image/gif', gif: 1 }; }
   if (f && f.url) return blobRef(f);
@@ -579,8 +581,9 @@ const A = {
     }
     if (op === 'send') {
       const b = body(req); const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
-      const hasFile = fileGiven(b.file); const wizz = b.wizz ? { wizz: 1 } : {};
-      if (!text && !hasFile && !b.wizz) throw fail(400, 'Message vide.');
+      const hasFile = fileGiven(b.file); const wink = !hasFile && !b.wizz && WINKS[b.wink] ? String(b.wink) : ''; const wizz = b.wizz ? { wizz: 1 } : wink ? { wink } : {};
+      if (!text && !hasFile && !b.wizz && !wink) throw fail(400, 'Message vide.');
+      if (wink && !(await redis('SET', `cse:wink:${u.id}`, '1', 'NX', 'EX', 5))) throw fail(429, 'Un clin d’œil toutes les 5 secondes maximum 😉');
       await rateLimit(req, 'chat', 120);
       if (b.wizz && !(await redis('SET', `cse:wizz:${u.id}`, '1', 'NX', 'EX', 20))) throw fail(429, 'Un Wizz toutes les 20 secondes maximum 😉');
       const att = hasFile ? await saveMedia(b.file) : wizz; // photo, vidéo, document joint… ou Wizz
@@ -766,12 +769,14 @@ const A = {
       return { ok: true };
     }
     const b = body(req); const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
-    if (!text && !fileGiven(b.file)) throw fail(400, 'Message vide.');
+    const wink = !fileGiven(b.file) && WINKS[b.wink] ? String(b.wink) : '';
+    if (!text && !fileGiven(b.file) && !wink) throw fail(400, 'Message vide.');
     await rateLimit(req, 'grp', 120);
+    if (wink && !(await redis('SET', `cse:wink:${u.id}`, '1', 'NX', 'EX', 5))) throw fail(429, 'Un clin d’œil toutes les 5 secondes maximum 😉');
     const msg = { uid: u.id, by: who(u), elu: u.role === 'elu', typ: u.type === 'elu' ? 'elu' : '', text, at: new Date().toISOString() };
     const mentions = (await resolveMentions(b.mentions, text, !!room)).filter(m => m.id !== u.id); if (mentions.length) msg.mentions = mentions;
     const toAll = /(^|\s)@tous(?![\p{L}\d])/iu.test(text) && (!!room || isEluCse(u)); if (toAll) msg.all = true;
-    if (fileGiven(b.file)) Object.assign(msg, await saveMedia(b.file));
+    if (fileGiven(b.file)) Object.assign(msg, await saveMedia(b.file)); else if (wink) msg.wink = wink;
     const m = await groupMeta(room); msg.i = m.n;
     const len = Number(await redis('RPUSH', LK, JSON.stringify(msg)));
     m.n = m.base + len;
@@ -781,14 +786,14 @@ const A = {
       await redis('LTRIM', LK, len - GROUP_KEEP, -1); m.base = m.n - GROUP_KEEP;
     }
     await redis('SET', MK, JSON.stringify(m));
-    if (!text && len > 1) { // photos envoyées en série : une seule notification (celle du 1er message)
+    if (!text && !wink && len > 1) { // photos envoyées en série : une seule notification (celle du 1er message)
       try { const prev = JSON.parse(await redis('LINDEX', LK, len - 2)); if (prev && prev.uid === u.id && Date.now() - Date.parse(prev.at) < 60e3) return { n: m.n, msg }; } catch {}
     }
     if (mentions.length) await notify({ to: mentions.map(m => m.id), pref: 'mention', title: `📣 ${msg.by} vous a mentionné·e`, body: `${room ? '🗳️ Discussion élus' : '👥 Discussion globale'} : ${text}`, url: room ? '/#/communaute/elus' : '/#/communaute/discussion', tag: 'mention' });
     const ml = mentions.map(m => m.id);
     if (toAll) await notify({ to: room ? 'elus' : 'all', except: u.id, exceptList: ml, pref: 'mention', title: `📢 ${msg.by} à tout le monde`, body: `${room ? '🗳️ Discussion élus' : '👥 Discussion globale'} : ${text}`, url: room ? '/#/communaute/elus' : '/#/communaute/discussion', tag: 'tous' });
-    else await notify(room ? { to: 'elus', except: u.id, exceptList: ml, pref: 'elus', title: '🗳️ Discussion élus', body: `${msg.by} : ${text || (/^Message vocal/.test(msg.fileName || '') ? '🎤 Message vocal' : '📷 Photo / vidéo')}`, url: '/#/communaute/elus', tag: 'grp-elus' }
-      : { to: 'all', except: u.id, exceptList: ml, pref: 'global', title: '👥 Discussion globale', body: `${msg.by} : ${text || (/^Message vocal/.test(msg.fileName || '') ? '🎤 Message vocal' : '📷 Photo / vidéo')}`, url: '/#/communaute/discussion', tag: 'grp' });
+    else await notify(room ? { to: 'elus', except: u.id, exceptList: ml, pref: 'elus', title: '🗳️ Discussion élus', body: `${msg.by} : ${text || (msg.wink ? '✨ Clin d’œil : ' + WINKS[msg.wink] : /^Message vocal/.test(msg.fileName || '') ? '🎤 Message vocal' : '📷 Photo / vidéo')}`, url: '/#/communaute/elus', tag: 'grp-elus' }
+      : { to: 'all', except: u.id, exceptList: ml, pref: 'global', title: '👥 Discussion globale', body: `${msg.by} : ${text || (msg.wink ? '✨ Clin d’œil : ' + WINKS[msg.wink] : /^Message vocal/.test(msg.fileName || '') ? '🎤 Message vocal' : '📷 Photo / vidéo')}`, url: '/#/communaute/discussion', tag: 'grp' });
     return { n: m.n, msg };
   },
 
@@ -796,7 +801,7 @@ const A = {
     await need(req);
     if (!GIPHY_KEY) return { enabled: false, items: [] };
     const q = String(req.query.q || '').trim().toLowerCase().slice(0, 50); const off = Math.min(Math.max(Number(req.query.offset) || 0, 0), 200);
-    const ck = `cse:gif:${q || '_tendances'}:${off}`;
+    const ck = `cse:gif2:${q || '_tendances'}:${off}`;
     const cached = await redis('GET', ck); if (cached) return { enabled: true, items: JSON.parse(cached) };
     // 100 % gratuit : la clé GIPHY « beta » permet 100 appels par heure ; on s'arrête à 90 (compteur global) et 40 par personne
     await rateLimit(req, 'gif', 40);
@@ -804,13 +809,15 @@ const A = {
     if (nCalls > 90) throw fail(429, 'Beaucoup de recherches de GIF en ce moment : réessayez dans quelques minutes, ou choisissez parmi les mots proposés.');
     const u = q ? `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(q)}&limit=24&offset=${off}&rating=pg-13&lang=fr`
       : `https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_KEY}&limit=24&offset=${off}&rating=pg-13`;
-    const r = await fetch(u, { signal: AbortSignal.timeout(6000) });
-    if (!r.ok) throw fail(502, r.status === 429 ? 'Trop de recherches de GIF pour le moment : réessayez dans quelques minutes.' : 'La bibliothèque de GIF ne répond pas.');
+    let r; try { r = await fetch(u, { signal: AbortSignal.timeout(8000) }); } catch (x) { console.error('GIPHY injoignable', x && x.message); await redis('DECR', hk); throw fail(502, 'La bibliothèque de GIF ne répond pas (connexion). Réessayez.'); }
+    if (!r.ok) { const t = await r.text().catch(() => ''); console.error('GIPHY erreur', r.status, t.slice(0, 300)); await redis('DECR', hk);
+      throw fail(502, r.status === 429 ? 'Trop de recherches de GIF pour le moment : réessayez dans quelques minutes.' : (r.status === 401 || r.status === 403) ? `GIPHY refuse la clé (erreur ${r.status}) : vérifiez GIPHY_API_KEY dans Vercel.` : `La bibliothèque de GIF ne répond pas (erreur ${r.status}).`); }
     const j = await r.json();
     const items = (j.data || []).map(g => { const im = g.images || {}; const full = im.downsized_medium || im.downsized || im.original || {}; const pv = im.fixed_width_downsampled || im.fixed_width || im.preview_gif || full;
       return { id: g.id, title: String(g.title || '').slice(0, 80), url: String(full.url || '').split('?')[0], preview: String(pv.url || '').split('?')[0], w: Number(pv.width) || 200, h: Number(pv.height) || 150 }; })
-      .filter(x => GIPHY_RE.test(x.url) && GIPHY_RE.test(x.preview));
-    await redis('SET', ck, JSON.stringify(items), 'EX', q ? 86400 : 21600); // recherches gardées 24 h, tendances 6 h
+      .map(x => ({ ...x, preview: GIPHY_RE.test(x.preview) ? x.preview : x.url })).filter(x => GIPHY_RE.test(x.url));
+    if (!items.length && (j.data || []).length) console.error('GIPHY : adresses refusées', JSON.stringify((j.data[0].images || {}).fixed_width || {}).slice(0, 300));
+    if (items.length) await redis('SET', ck, JSON.stringify(items), 'EX', q ? 86400 : 21600); // recherches gardées 24 h, tendances 6 h (jamais un résultat vide)
     return { enabled: true, items };
   },
 
