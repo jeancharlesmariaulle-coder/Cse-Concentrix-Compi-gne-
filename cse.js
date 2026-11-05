@@ -233,6 +233,24 @@ async function socSummary(t) {
   if (c || Object.keys(r).length) await redis('HSET', 'cse:socsum', t, JSON.stringify(sum)); else await redis('HDEL', 'cse:socsum', t);
   return sum;
 }
+
+/* ---------- Gros fichiers (photos HD, vidéos) : envoi direct du téléphone vers Vercel Blob ----------
+   Le serveur ne fait que délivrer une clé d'envoi temporaire ; le fichier ne transite pas par la fonction. */
+const BIG_MAX = 300 * 1024 * 1024; // 300 Mo par fichier
+const BLOB_URL_RE = /^https:\/\/[a-z0-9]+\.public\.blob\.vercel-storage\.com\/media\/[\w\/.%-]+$/i;
+function blobRef(f) { // fichier déjà envoyé sur Vercel Blob par le navigateur
+  const url = String(f && f.url || '');
+  if (!BLOB_URL_RE.test(url)) throw fail(400, 'Fichier invalide.');
+  const type = String(f.type || '').slice(0, 60);
+  if (!/^(image|video)\//.test(type)) throw fail(400, 'Photo ou vidéo uniquement.');
+  return { fileId: url, fileName: clip(f.name || 'fichier'), fileType: type, fileSize: Math.max(0, Math.min(Number(f.size) || 0, BIG_MAX)) };
+}
+async function delFile(id) {
+  if (!id) return;
+  if (/^https:\/\//.test(id)) { if (BLOB_TOKEN && BLOB_URL_RE.test(id)) try { await B().del(id, { token: BLOB_TOKEN }); } catch {} return; }
+  await redis('DEL', `cse:file:${id}`);
+}
+
 async function saveDataFile(f) {
   const data = String(f && f.data || '');
   if (!/^data:image\/(jpeg|png|webp);base64,/.test(data)) throw fail(400, 'Photo invalide.');
@@ -252,6 +270,7 @@ const GROUP_MAX = 500, GROUP_KEEP = 400;
 async function groupMeta(room = '') { const v = await redis('GET', 'cse:gmeta' + room); return v ? JSON.parse(v) : { n: 0, base: 0, v: 0 }; }
 const isEluCse = u => !!u && (u.type === 'elu' || u.role === 'elu');
 async function saveMedia(f) {
+  if (f && f.url) return blobRef(f);
   const data = String(f && f.data || '');
   const m = data.match(/^data:((image\/(jpeg|png|webp|gif))|(video\/(mp4|webm|quicktime)));base64,/);
   if (!m) throw fail(400, 'Fichier non pris en charge (photo ou vidéo uniquement).');
@@ -480,7 +499,7 @@ const A = {
     if (req.method === 'DELETE') {
       await need(req, 'elu'); const id = String(req.query.id || '');
       const prev = await redis('HGET', key, id);
-      if (prev) { try { const it = JSON.parse(prev); if (it.fileId) await redis('DEL', `cse:file:${it.fileId}`); if (it.docId) await redis('DEL', `cse:file:${it.docId}`); } catch {} }
+      if (prev) { try { const it = JSON.parse(prev); await delFile(it.fileId); await delFile(it.docId); } catch {} }
       await redis('HDEL', key, id);
       if (['actus', 'events', 'galerie'].includes(col)) { try { await dropTarget(`${col}:${id}`); } catch {} }
       return { ok: true };
@@ -504,20 +523,21 @@ const A = {
     for (const f of FIELDS[col]) if (b[f] !== undefined) item[f] = clip(b[f], f);
     item.id = item.id || newId(); item.created = item.created || new Date().toISOString();
     async function storeFile(f, prefix) {
+      if (f.url) { const r = blobRef(f); await delFile(item[prefix + 'Id']); item[prefix + 'Id'] = r.fileId; item[prefix + 'Name'] = r.fileName; item[prefix + 'Type'] = r.fileType; item[prefix + 'Size'] = r.fileSize; return; }
       const data = String(f.data);
       if (!/^data:[\w.+-]+\/[\w.+-]+;base64,/.test(data)) throw fail(400, 'Fichier invalide');
       if (data.length > MAX_FILE) throw fail(413, 'Fichier trop lourd (2,4 Mo maximum).');
-      if (item[prefix + 'Id']) await redis('DEL', `cse:file:${item[prefix + 'Id']}`);
+      if (item[prefix + 'Id']) await delFile(item[prefix + 'Id']);
       item[prefix + 'Id'] = newId(); await redis('SET', `cse:file:${item[prefix + 'Id']}`, data);
       item[prefix + 'Name'] = clip(f.name || 'fichier'); item[prefix + 'Type'] = data.slice(5, data.indexOf(';'));
       item[prefix + 'Size'] = Math.round((data.length - data.indexOf(',') - 1) * 0.75);
     }
     // ancienne actualité : le PDF était rangé comme fichier principal → on le déplace en document joint
-    if (b.file && b.file.data && item.fileId && !/^image\//.test(item.fileType || '') && !item.docId) {
+    if (b.file && b.file.data && item.fileId && !/^(image|video)\//.test(item.fileType || '') && !item.docId) {
       item.docId = item.fileId; item.docName = item.fileName; item.docType = item.fileType; item.docSize = item.fileSize;
       delete item.fileId;
     }
-    if (b.file && b.file.data) await storeFile(b.file, 'file');   // photo / image principale
+    if (b.file && (b.file.data || b.file.url)) await storeFile(b.file, 'file');   // photo / image principale
     if (b.doc && b.doc.data) await storeFile(b.doc, 'doc');       // document joint (PDF, Word…)
     if (b.removeDoc && item.docId) { await redis('DEL', `cse:file:${item.docId}`); for (const k of ['docId', 'docName', 'docType', 'docSize']) delete item[k]; }
     if (col === 'galerie' && !item.fileId && !item.video) throw fail(400, 'Ajoutez une photo, une vidéo ou un lien vidéo.');
@@ -633,7 +653,7 @@ const A = {
       const id = String(req.query.id || ''); const prev = await redis('HGET', 'cse:feed', id);
       if (!prev) return { ok: true };
       const p = JSON.parse(prev); if (p.uid !== u.id && u.role !== 'elu') throw fail(403, 'Vous ne pouvez supprimer que vos propres publications.');
-      if (p.fileId) await redis('DEL', `cse:file:${p.fileId}`);
+      if (p.fileId) await delFile(p.fileId);
       await redis('HDEL', 'cse:feed', id); await dropTarget(`feed:${id}`); await bumpFeed();
       return { ok: true };
     }
@@ -653,7 +673,7 @@ const A = {
       const f = (await redis('HGETALL', 'cse:feed')) || []; const all = [];
       for (let i = 1; i < f.length; i += 2) { try { all.push(JSON.parse(f[i])); } catch {} }
       all.sort((a, b2) => String(a.at).localeCompare(String(b2.at)));
-      for (const old of all.slice(0, n - FEED_MAX)) { if (old.fileId) await redis('DEL', `cse:file:${old.fileId}`); await redis('HDEL', 'cse:feed', old.id); await dropTarget(`feed:${old.id}`); }
+      for (const old of all.slice(0, n - FEED_MAX)) { if (old.fileId) await delFile(old.fileId); await redis('HDEL', 'cse:feed', old.id); await dropTarget(`feed:${old.id}`); }
     }
     await bumpFeed();
     return { item: p };
@@ -684,24 +704,24 @@ const A = {
       const raw = await redis('LINDEX', LK, i - m.base); const msg = raw && JSON.parse(raw);
       if (!msg) throw fail(404, 'Message introuvable.');
       if (msg.uid !== u.id && u.role !== 'elu') throw fail(403, 'Vous ne pouvez supprimer que vos propres messages.');
-      if (msg.fileId) await redis('DEL', `cse:file:${msg.fileId}`);
+      if (msg.fileId) await delFile(msg.fileId);
       await redis('LSET', LK, i - m.base, JSON.stringify({ i, uid: msg.uid, by: msg.by, at: msg.at, deleted: true }));
       m.v = (m.v || 0) + 1; await redis('SET', MK, JSON.stringify(m));
       return { ok: true };
     }
     const b = body(req); const text = String(b.text || '').replace(/\r\n?/g, '\n').trim().slice(0, 2000);
-    if (!text && !(b.file && b.file.data)) throw fail(400, 'Message vide.');
+    if (!text && !(b.file && (b.file.data || b.file.url))) throw fail(400, 'Message vide.');
     await rateLimit(req, 'grp', 120);
     const msg = { uid: u.id, by: who(u), elu: u.role === 'elu', typ: u.type === 'elu' ? 'elu' : '', text, at: new Date().toISOString() };
     const mentions = (await resolveMentions(b.mentions, text, !!room)).filter(m => m.id !== u.id); if (mentions.length) msg.mentions = mentions;
     const toAll = /(^|\s)@tous(?![\p{L}\d])/iu.test(text) && (!!room || isEluCse(u)); if (toAll) msg.all = true;
-    if (b.file && b.file.data) Object.assign(msg, await saveMedia(b.file));
+    if (b.file && (b.file.data || b.file.url)) Object.assign(msg, await saveMedia(b.file));
     const m = await groupMeta(room); msg.i = m.n;
     const len = Number(await redis('RPUSH', LK, JSON.stringify(msg)));
     m.n = m.base + len;
     if (len > GROUP_MAX) { // on garde les GROUP_KEEP derniers messages et on libère les fichiers des plus anciens
       const old = (await redis('LRANGE', LK, 0, len - GROUP_KEEP - 1)) || [];
-      for (const x of old) { try { const o = JSON.parse(x); if (o.fileId) await redis('DEL', `cse:file:${o.fileId}`); } catch {} }
+      for (const x of old) { try { const o = JSON.parse(x); if (o.fileId) await delFile(o.fileId); } catch {} }
       await redis('LTRIM', LK, len - GROUP_KEEP, -1); m.base = m.n - GROUP_KEEP;
     }
     await redis('SET', MK, JSON.stringify(m));
@@ -714,6 +734,20 @@ const A = {
     else await notify(room ? { to: 'elus', except: u.id, exceptList: ml, pref: 'elus', title: '🗳️ Discussion élus', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/elus', tag: 'grp-elus' }
       : { to: 'all', except: u.id, exceptList: ml, pref: 'global', title: '👥 Discussion globale', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/discussion', tag: 'grp' });
     return { n: m.n, msg };
+  },
+
+  async upload(req) {
+    const u = await need(req);
+    if (!BLOB_TOKEN) throw fail(503, "Le stockage des gros fichiers n'est pas branché.");
+    await rateLimit(req, 'upl', 300);
+    const b = body(req); const type = String(b.type || '').toLowerCase(); const size = Number(b.size) || 0;
+    if (!/^(image\/(jpeg|png|webp|gif|heic|heif)|video\/(mp4|webm|quicktime|3gpp|x-m4v))$/.test(type)) throw fail(400, 'Format non pris en charge (photo ou vidéo uniquement).');
+    if (size > BIG_MAX) throw fail(413, `Fichier trop lourd (${Math.round(size / 1048576)} Mo) : 300 Mo maximum.`);
+    const ext = (String(b.name || '').match(/\.([a-z0-9]{2,5})$/i) || [, type.split('/')[1].replace('quicktime', 'mov')])[1].toLowerCase();
+    const pathname = `media/${new Date().toISOString().slice(0, 7)}/${u.id}-${Date.now().toString(36)}.${ext}`;
+    const { generateClientTokenFromReadWriteToken } = require('@vercel/blob/client');
+    const token = await generateClientTokenFromReadWriteToken({ token: BLOB_TOKEN, pathname, allowedContentTypes: [type], maximumSizeInBytes: BIG_MAX, addRandomSuffix: true, validUntil: Date.now() + 2 * 3600e3 });
+    return { token, pathname, api: 'https://vercel.com/api/blob' };
   },
 
   async invite(req) {

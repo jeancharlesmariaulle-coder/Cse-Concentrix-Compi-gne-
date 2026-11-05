@@ -1257,6 +1257,10 @@ body:has(#install-banner:not([hidden])) .notif-banner{bottom:100px}
 .gf-v{color:#fff}.gf-v svg{width:22px;height:22px}
 .gf button{position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;border:0;background:rgba(14,26,51,.75);color:#fff;font-size:14px;line-height:1;cursor:pointer}
 .gf-n{font-size:12px;color:var(--ink-2);font-weight:700}
+.up-size{position:absolute;left:4px;bottom:4px;background:rgba(14,26,51,.75);color:#fff;font-size:10px;font-weight:800;border-radius:6px;padding:1px 5px}
+.up-item[data-pct]::after{content:attr(data-pct);position:absolute;inset:0;display:grid;place-items:center;background:rgba(14,26,51,.45);color:#fff;font-weight:900;font-size:15px}
+.up-item.done::after,.up-item.fail::after{content:none}
+.gf-p{position:absolute;inset:0;display:grid;place-items:center;background:rgba(14,26,51,.55);color:#fff;font-size:11px}
 
 </style>
 </head>
@@ -1683,7 +1687,7 @@ const Store = {
     if (it.fileData) return it.fileData;
     return this.link(it.fileId, it.fileName, dl);
   },
-  link(id, name, dl) { return `${API}?a=file&id=${encodeURIComponent(id)}&name=${encodeURIComponent(name || 'fichier')}&t=${encodeURIComponent(this.token() || '')}${dl ? '&dl=1' : ''}`; },
+  link(id, name, dl) { if (/^https:\/\//.test(id || '')) return dl ? id + '?download=1' : id; return `${API}?a=file&id=${encodeURIComponent(id)}&name=${encodeURIComponent(name || 'fichier')}&t=${encodeURIComponent(this.token() || '')}${dl ? '&dl=1' : ''}`; },
   docUrl(d, dl) { return !d ? '' : d.data ? d.data : this.link(d.id, d.name, dl); },
 };
 
@@ -2174,7 +2178,7 @@ function openForm(col, id) {
     const d0 = docOf(it);
     html += `<div class="field"><label for="f-doc">Document joint <span class="hint">(PDF, Word… 2,4 Mo max — pour un PDF sans photo, la 1re page devient l'image de l'actualité)</span></label><input id="f-doc" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.txt">${d0 ? `<p class="note" style="margin-top:6px">Document actuel : ${esc(d0.name || '')}</p><label class="field-check" style="margin-top:6px"><input type="checkbox" id="f-rmdoc"> Retirer ce document</label>` : ''}</div>`;
   }
-  if (meta.media && !id) html += `<div class="field"><label>Photos et vidéos depuis l'appareil <span class="hint">(plusieurs à la fois possible — vidéo courte : 2,4 Mo max chacune)</span></label>
+  if (meta.media && !id) html += `<div class="field"><label>Photos et vidéos depuis l'appareil <span class="hint">(plusieurs à la fois possible — photos en haute qualité, vidéos jusqu'à 300 Mo chacune)</span></label>
     <label class="up-drop" for="f-files">${icon('image')}<span><strong>Choisir des photos / vidéos</strong><small>Sélectionnez-en autant que vous voulez dans votre galerie</small></span></label>
     <input id="f-files" type="file" accept="image/*,video/*" multiple hidden><div class="up-grid" id="f-previews"></div></div>`;
   else if (meta.media) html += `<div class="field"><label for="f-file">Photo ou vidéo depuis l'appareil <span class="hint">(vidéo courte : 2,4 Mo max — pour une vidéo plus longue, utilisez un lien YouTube ou Facebook)</span></label><input id="f-file" type="file" accept="image/*,video/*">${it.fileId ? `<p class="note" style="margin-top:6px">Fichier actuel : ${esc(it.fileName || '')}</p>` : ''}</div>`;
@@ -2202,9 +2206,8 @@ function openForm(col, id) {
         for (let k = 0; k < n; k++) {
           const fl = UP.files[k]; btn.textContent = `Envoi ${k + 1}/${n}…`; $('#f-previews').children[k]?.classList.add('busy');
           try {
-            let f;
-            if (fl.type.startsWith('image/') && fl.type !== 'image/gif') f = await compressImage(fl, 1600, .82);
-            else { if (fl.size > 2.4 * 1024 * 1024) throw new Error(`${fl.name} : vidéo trop lourde (2,4 Mo max), mettez-la sur YouTube ou Facebook.`); f = { name: fl.name, data: await readAsDataURL(fl) }; }
+            const tile = $('#f-previews').children[k];
+            const f = await mediaPrepare(fl, pc => { btn.textContent = `Envoi ${k + 1}/${n} · ${pc} %`; if (tile) tile.dataset.pct = pc + ' %'; });
             await Store.save(col, { ...data, video: '' }, f); ok++; $('#f-previews').children[k]?.classList.replace('busy', 'done');
           } catch (x) { errs.push(x.message); $('#f-previews').children[k]?.classList.replace('busy', 'fail'); }
         }
@@ -3264,7 +3267,7 @@ function groupView(room = '') {
           <button class="icon-btn send" id="grp-send" aria-label="Envoyer">${icon('send')}</button>
         </form>
       </section>
-      <p class="note feed-rules">${elus ? '🔒 Seul·e·s les élu·e·s (et les administrateurs) voient cette discussion. ' : ''}Ambiance conviviale et respectueuse : pas d'attaques personnelles ni d'informations confidentielles. Les responsables CGT peuvent retirer un message. Vidéos : 2,4 Mo maximum (sinon, partagez un lien).</p>
+      <p class="note feed-rules">${elus ? '🔒 Seul·e·s les élu·e·s (et les administrateurs) voient cette discussion. ' : ''}Ambiance conviviale et respectueuse : pas d'attaques personnelles ni d'informations confidentielles. Les responsables CGT peuvent retirer un message. Photos et vidéos jusqu'à 300 Mo.</p>
     </div></div>`;
 }
 async function groupAfter() {
@@ -3274,23 +3277,17 @@ async function groupAfter() {
   const ta = $('#grp-text'), fileBox = $('#grp-file'); mentionAttach(ta, Group.room === 'elus');
   ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'; };
   ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !/Mobi|Android/i.test(navigator.userAgent)) { e.preventDefault(); $('#grp-form').requestSubmit(); } };
-  // plusieurs photos / vidéos à la fois ; le texte est facultatif
+  // plusieurs photos / vidéos à la fois (jusqu'à 300 Mo chacune) ; le texte est facultatif
   Group.files = [];
   const drawFiles = () => {
-    $('#grp-file-prev').innerHTML = Group.files.map((f, k) => `<span class="gf">${f.data.startsWith('data:video') ? `<span class="gf-v">${icon('play')}</span>` : `<img src="${f.data}" alt="">`}<button type="button" data-gf-x="${k}" aria-label="Retirer">×</button></span>`).join('')
+    $('#grp-file-prev').innerHTML = Group.files.map((g, k) => `<span class="gf">${g.f.type.startsWith('video/') ? `<span class="gf-v">${icon('play')}</span>` : `<img src="${g.u}" alt="">`}${g.pct ? `<b class="gf-p">${g.pct}</b>` : ''}<button type="button" data-gf-x="${k}" aria-label="Retirer">×</button></span>`).join('')
       + (Group.files.length > 1 ? `<small class="gf-n">${Group.files.length} fichiers</small>` : '');
     fileBox.hidden = !Group.files.length;
   };
-  $('#grp-input').onchange = async e => {
-    const list = [...e.target.files]; e.target.value = ''; if (!list.length) return;
-    let skipped = 0;
-    for (const fl of list.slice(0, 20)) {
-      try {
-        if (fl.type.startsWith('image/') && fl.type !== 'image/gif') Group.files.push(await compressImage(fl, 1280, .8));
-        else if (fl.type.startsWith('video/') || fl.type === 'image/gif') { if (fl.size > 2.4 * 1024 * 1024) { skipped++; continue; } Group.files.push({ name: fl.name, data: await readAsDataURL(fl) }); }
-      } catch { skipped++; }
-    }
-    if (skipped) toast(`${skipped} fichier(s) ignoré(s) : vidéo de plus de 2,4 Mo ou fichier illisible.`);
+  $('#grp-input').onchange = e => {
+    const list = [...e.target.files].filter(f => /^(image|video)\//.test(f.type)); e.target.value = ''; if (!list.length) return;
+    const big = list.filter(f => f.size > 300 * 1024 * 1024).length; if (big) toast(`${big} fichier(s) de plus de 300 Mo ignoré(s).`);
+    for (const f of list.filter(f => f.size <= 300 * 1024 * 1024).slice(0, 20)) Group.files.push({ f, u: URL.createObjectURL(f) });
     drawFiles(); ta.focus();
   };
   $('#grp-file-prev').onclick = e => { const x = e.target.closest('[data-gf-x]'); if (x) { Group.files.splice(Number(x.dataset.gfX), 1); drawFiles(); } };
@@ -3301,8 +3298,9 @@ async function groupAfter() {
     try {
       // 1er envoi : le texte (et la 1re photo) ; les suivantes partent seules, sans texte
       for (let k = 0; k < Math.max(1, files.length); k++) {
-        if (files.length > 1) btn.title = `Envoi ${k + 1}/${files.length}`;
-        await Store.call('group', { method: 'POST', query: grpQ(), body: k ? { text: '', file: files[k] } : { text, file: files[0] || null, mentions } });
+        const g = files[k]; let file = null;
+        if (g) { file = await mediaPrepare(g.f, pc => { g.pct = pc + ' %'; drawFiles(); }); }
+        await Store.call('group', { method: 'POST', query: grpQ(), body: k ? { text: '', file } : { text, file, mentions } });
         Group.files = files.slice(k + 1); if (!k) { ta._mentions = new Map(); ta.value = ''; ta.style.height = 'auto'; } drawFiles();
       }
       await grpLoad(false); grpRender(true); Group.lastAct = Date.now(); grpTick();
@@ -3785,11 +3783,59 @@ function upDraw() {
   const g = $('#f-previews'); if (!g) return;
   UP.urls.forEach(u => URL.revokeObjectURL(u)); UP.urls = UP.files.map(f => URL.createObjectURL(f));
   g.innerHTML = UP.files.map((f, k) => `<div class="up-item">${f.type.startsWith('video/') ? `<video src="${UP.urls[k]}" muted preload="metadata"></video><span class="up-play">▶</span>` : `<img src="${UP.urls[k]}" alt="">`}
-    ${f.type.startsWith('video/') && f.size > 2.4 * 1024 * 1024 ? '<span class="up-warn">trop lourde</span>' : ''}<button type="button" class="up-x" data-up-x="${k}" aria-label="Retirer">×</button></div>`).join('')
+    ${f.size > 300 * 1024 * 1024 ? '<span class="up-warn">+ de 300 Mo</span>' : f.size > 20 * 1024 * 1024 ? `<span class="up-size">${Math.round(f.size / 1048576)} Mo</span>` : ''}<button type="button" class="up-x" data-up-x="${k}" aria-label="Retirer">×</button></div>`).join('')
     + (UP.files.length ? `<p class="up-count">${UP.files.length} fichier${UP.files.length > 1 ? 's' : ''} sélectionné${UP.files.length > 1 ? 's' : ''} · <label for="f-files" class="text-link">en ajouter</label></p>` : '');
   const b = $('#f-save'); if (b && UP.files.length) b.textContent = UP.files.length > 1 ? `Publier les ${UP.files.length}` : 'Publier';
 }
 document.addEventListener('click', e => { const x = e.target.closest('[data-up-x]'); if (x) { UP.files.splice(Number(x.dataset.upX), 1); upDraw(); } });
+
+/* =========================================================================
+   Gros fichiers : la photo ou la vidéo part directement du téléphone vers le
+   stockage Vercel Blob (le serveur délivre seulement une clé temporaire).
+   Repli automatique sur l'ancien envoi pour les fichiers de moins de 2,4 Mo.
+   ========================================================================= */
+function blobPut(file, tk, onProg) {
+  return new Promise((res, rej) => {
+    const go = vs => {
+      const x = new XMLHttpRequest();
+      x.open('PUT', `${tk.api}/?pathname=${encodeURIComponent(tk.pathname)}`);
+      x.setRequestHeader('authorization', 'Bearer ' + tk.token);
+      x.setRequestHeader('x-api-version', vs[0]);
+      x.setRequestHeader('x-content-type', file.type || 'application/octet-stream');
+      x.setRequestHeader('x-add-random-suffix', '1');
+      x.setRequestHeader('x-content-length', String(file.size));
+      x.upload.onprogress = e => { if (e.lengthComputable && onProg) onProg(Math.min(99, Math.round(e.loaded / e.total * 100))); };
+      x.onload = () => {
+        let j = {}; try { j = JSON.parse(x.responseText); } catch {}
+        if (x.status >= 200 && x.status < 300 && j.url) return res(j);
+        if (vs.length > 1 && x.status === 400 && /version/i.test(x.responseText)) return go(vs.slice(1));
+        rej(new Error((j.error && (j.error.message || j.error)) || `Envoi refusé par le stockage (${x.status}).`));
+      };
+      x.onerror = () => rej(new Error('Connexion interrompue pendant l’envoi.'));
+      x.send(file);
+    };
+    go(['11', '10', '9', '8', '7']);
+  });
+}
+async function bigUpload(file, onProg) {
+  const tk = await Store.call('upload', { method: 'POST', body: { name: file.name, type: file.type, size: file.size } });
+  const r = await blobPut(file, tk, onProg); onProg && onProg(100);
+  return { url: r.url, name: file.name || 'fichier', type: file.type, size: file.size };
+}
+const dataUrlToBlob = d => { const [h, b64] = d.split(','); const bin = atob(b64); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return new Blob([a], { type: h.slice(5, h.indexOf(';')) }); };
+async function mediaPrepare(fl, onProg) {
+  const SMALL = 2.3 * 1024 * 1024;
+  if (fl.size > 300 * 1024 * 1024) throw new Error(`${fl.name} : plus de 300 Mo.`);
+  if (fl.type.startsWith('image/') && fl.type !== 'image/gif') {
+    const c = await compressImage(fl, 2560, .88); // haute qualité
+    if (c.data.length < SMALL * 1.33) return c;
+    const blob = dataUrlToBlob(c.data);
+    try { return await bigUpload(new File([blob], (fl.name || 'photo').replace(/\.\w+$/, '') + '.jpg', { type: blob.type }), onProg); }
+    catch { return compressImage(fl, 1600, .82); } // repli : version plus légère
+  }
+  try { return await bigUpload(fl, onProg); }
+  catch (e) { if (fl.size <= 2.4 * 1024 * 1024) return { name: fl.name, data: await readAsDataURL(fl) }; throw new Error(`${fl.name} : ${e.message}`); }
+}
 
 </script>
 </body>
