@@ -389,12 +389,18 @@ const A = {
     if (String(b.password || '').length < 8) throw fail(400, 'Le mot de passe doit faire au moins 8 caractères.');
     if (!String(b.prenom || '').trim() || !String(b.nom || '').trim()) throw fail(400, 'Indiquez votre prénom et votre nom.');
     if (email === ADMIN_EMAIL) throw fail(409, 'Cette adresse est réservée au compte administrateur.');
-    await rateLimit(req, 'reg', 5);
+    // invitation envoyée par un·e administrateur·rice : le compte est activé tout de suite
+    let inv = null;
+    if (b.invite) { const v = await redis('HGET', 'cse:invites', String(b.invite).slice(0, 40)); inv = v && JSON.parse(v); if (!inv || inv.used || inv.revoked || Date.parse(inv.exp) < Date.now()) inv = null; }
+    if (!inv) await rateLimit(req, 'reg', 5);
     const existing = await redis('HGET', 'cse:emails', email);
     if (existing) throw fail(409, 'Un compte existe déjà avec cet email.');
-    const u = { id: newId(), email, prenom: clip(b.prenom), nom: clip(b.nom), service: clip(b.service), role: 'salarie', status: 'pending', created: new Date().toISOString(), ...hashPw(b.password) };
+    const u = { id: newId(), email, prenom: clip(b.prenom), nom: clip(b.nom), service: clip(b.service), role: 'salarie', status: inv ? 'active' : 'pending', created: new Date().toISOString(), ...hashPw(b.password) };
+    if (inv) { u.type = inv.type === 'elu' ? 'elu' : 'salarie'; u.invitedBy = inv.by; }
     await saveUser(u); await redis('HSET', 'cse:emails', email, u.id);
-    return { ok: true, status: 'pending' };
+    if (inv) { Object.assign(inv, { used: new Date().toISOString(), usedBy: u.id, usedName: `${u.prenom} ${u.nom}` }); await redis('HSET', 'cse:invites', inv.id, JSON.stringify(inv)); }
+    else await notify({ to: 'admins', pref: 'gestion', title: '👤 Nouvelle inscription à valider', body: `${u.prenom} ${u.nom} (${email})`, url: '/#/comptes', tag: 'inscription' });
+    return { ok: true, status: u.status };
   },
 
   async login(req) {
@@ -705,6 +711,34 @@ const A = {
     else await notify(room ? { to: 'elus', except: u.id, exceptList: ml, pref: 'elus', title: '🗳️ Discussion élus', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/elus', tag: 'grp-elus' }
       : { to: 'all', except: u.id, exceptList: ml, pref: 'global', title: '👥 Discussion globale', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/discussion', tag: 'grp' });
     return { n: m.n, msg };
+  },
+
+  async invite(req) {
+    // vérification publique d'un lien d'invitation (pré-remplit l'inscription)
+    if (req.method === 'GET' && req.query.check) {
+      const v = await redis('HGET', 'cse:invites', String(req.query.check).slice(0, 40)); const inv = v && JSON.parse(v);
+      if (!inv || inv.revoked) throw fail(404, "Cette invitation n'existe plus.");
+      if (inv.used) throw fail(410, 'Cette invitation a déjà été utilisée : connectez-vous avec votre compte.');
+      if (Date.parse(inv.exp) < Date.now()) throw fail(410, 'Cette invitation a expiré : demandez-en une nouvelle à la section.');
+      return { prenom: inv.prenom, nom: inv.nom, email: inv.email, by: inv.byName };
+    }
+    const u = await need(req, 'elu');
+    const all = async () => { const f = (await redis('HGETALL', 'cse:invites')) || []; const o = []; for (let i = 1; i < f.length; i += 2) { try { o.push(JSON.parse(f[i])); } catch {} } return o.sort((a, c) => String(c.created).localeCompare(String(a.created))); };
+    if (req.method === 'GET') return { items: (await all()).slice(0, 150) };
+    if (req.method === 'DELETE') { const v = await redis('HGET', 'cse:invites', String(req.query.id || '')); if (!v) throw fail(404, 'Invitation introuvable.'); const inv = JSON.parse(v); inv.revoked = true; await redis('HSET', 'cse:invites', inv.id, JSON.stringify(inv)); return { ok: true }; }
+    const b = body(req);
+    if (req.query.id) { // marquer comme envoyée (email / SMS / WhatsApp…)
+      const v = await redis('HGET', 'cse:invites', String(req.query.id)); if (!v) throw fail(404, 'Invitation introuvable.'); const inv = JSON.parse(v);
+      inv.sent = [...(inv.sent || []), { via: clip(b.via).slice(0, 20), at: new Date().toISOString() }].slice(-10); await redis('HSET', 'cse:invites', inv.id, JSON.stringify(inv)); return { ok: true, item: inv };
+    }
+    await rateLimit(req, 'inv', 200);
+    const email = String(b.email || '').trim().toLowerCase(), tel = String(b.tel || '').replace(/[^\d+]/g, '').slice(0, 16);
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw fail(400, 'Adresse email invalide.');
+    if (email && await redis('HGET', 'cse:emails', email)) throw fail(409, 'Un compte existe déjà avec cet email.');
+    const inv = { id: crypto.randomBytes(12).toString('base64url'), prenom: clip(b.prenom), nom: clip(b.nom), email, tel, type: b.type === 'elu' ? 'elu' : 'salarie',
+      by: u.id, byName: u.id === 'admin' ? 'la section CGT' : `${u.prenom} ${u.nom}`, created: new Date().toISOString(), exp: new Date(Date.now() + 30 * 864e5).toISOString() };
+    await redis('HSET', 'cse:invites', inv.id, JSON.stringify(inv));
+    return { ok: true, item: inv };
   },
 
   async members(req) { // annuaire pour les mentions @ : prénom, nom, type (pas d'email)
