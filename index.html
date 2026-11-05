@@ -1441,7 +1441,7 @@ async function pdfCover(src) {
     return c.toDataURL('image/jpeg', .85);
   } catch (e) { console.warn('Aperçu PDF impossible', e); return null; }
 }
-const roleLabel = (r, owner) => r === 'elu' ? (owner ? 'Administrateur·rice avec la main' : 'Administrateur·rice') : 'Salarié·e';
+const roleLabel = (r, owner) => r === 'elu' ? (owner ? 'Administrateur avec la main' : 'Administrateur') : 'Salarié·e';
 const fullName = u => u ? `${u.prenom || ''} ${u.nom || ''}`.trim() : '';
 const initials = u => ((u?.prenom || '?')[0] + (u?.nom || '')[0] || '').toUpperCase();
 
@@ -1954,9 +1954,9 @@ const Views = {
       <div class="u-actions">${u.status === 'pending' ? `<button class="btn btn-red btn-sm" data-uop="approve" data-uid="${u.id}">${icon('check')}Valider</button><button class="btn btn-light btn-sm" data-uop="delete" data-uid="${u.id}">Refuser</button>`
       : `<span class="pill ${u.status !== 'active' ? 'yellow' : u.owner ? 'own' : u.role === 'elu' ? 'adm' : 'green'}">${u.status === 'active' ? (u.owner ? '👑 ' : '') + roleLabel(u.role, u.owner) : 'Suspendu'}</span>
          ${iOwn && u.status === 'active' && u.id !== (Store.user || {}).id ? `<button type="button" class="btn btn-light btn-sm role-btn" data-role-btn="${u.id}" aria-expanded="false">👑 Rôle</button>` : ''}
-         ${u.role === 'elu' && !iOwn ? '' : `<select class="u-select" data-uid="${u.id}" aria-label="Actions pour ${esc(fullName(u))}"><option value="">Actions…</option>${u.status === 'active' ? '<option value="suspend">Suspendre l’accès</option>' : '<option value="approve">Réactiver</option>'}<option value="reset">Réinitialiser le mot de passe</option><option value="delete">Supprimer le compte</option></select>`}`}</div>
+         ${u.role === 'elu' && !iOwn ? '' : `<select class="u-select" data-uid="${u.id}" aria-label="Actions pour ${esc(fullName(u))}"><option value="">Actions…</option>${iOwn && u.status === 'active' && u.id !== (Store.user || {}).id ? `<optgroup label="Rôle">${u.role !== 'elu' || u.owner ? `<option value="${u.owner ? 'unowner' : 'elu'}">🛠️ Nommer administrateur</option>` : ''}${!u.owner ? '<option value="owner">👑 Nommer administrateur avec la main</option>' : ''}${u.role === 'elu' ? '<option value="salarie">👤 Repasser salarié·e</option>' : ''}</optgroup><optgroup label="Compte">` : ''}${u.status === 'active' ? '<option value="suspend">Suspendre l’accès</option>' : '<option value="approve">Réactiver</option>'}<option value="reset">Réinitialiser le mot de passe</option><option value="delete">Supprimer le compte</option>${iOwn && u.status === 'active' && u.id !== (Store.user || {}).id ? '</optgroup>' : ''}</select>`}`}</div>
       ${iOwn && u.status === 'active' && u.id !== (Store.user || {}).id ? `<div class="role-pick" id="rp-${u.id}" hidden><p>Choisir le rôle de <strong>${esc(fullName(u))}</strong> :</p>
-        ${[['salarie', '👤', 'Salarié·e', 'Accès normal au site'], ['elu', '🛠️', 'Administrateur·rice', 'Publie, lit les messages, gère adhésions, billetterie et comptes'], ['owner', '👑', 'Administrateur·rice avec la main', 'Peut en plus attribuer les rôles']].map(([r, e, l, d]) => { const cur = (u.owner ? 'owner' : u.role === 'elu' ? 'elu' : 'salarie') === r; return `<button type="button" class="role-opt ${cur ? 'on' : ''}" data-role-set="${r}" data-uid="${u.id}" data-cur="${u.owner ? 'owner' : u.role}" ${cur ? 'disabled' : ''}><span>${e}</span><b>${l}</b><small>${cur ? 'Rôle actuel' : d}</small></button>`; }).join('')}</div>` : ''}</div>`;
+        ${[['salarie', '👤', 'Salarié·e', 'Accès normal au site'], ['elu', '🛠️', 'Administrateur', 'Publie, lit les messages, gère adhésions, billetterie et comptes'], ['owner', '👑', 'Administrateur avec la main', 'Peut en plus attribuer les rôles']].map(([r, e, l, d]) => { const cur = (u.owner ? 'owner' : u.role === 'elu' ? 'elu' : 'salarie') === r; return `<button type="button" class="role-opt ${cur ? 'on' : ''}" data-role-set="${r}" data-uid="${u.id}" data-cur="${u.owner ? 'owner' : u.role}" ${cur ? 'disabled' : ''}><span>${e}</span><b>${l}</b><small>${cur ? 'Rôle actuel' : d}</small></button>`; }).join('')}</div>` : ''}</div>`;
     const iOwn = !!(Store.user && Store.user.owner);
     return `<div class="page">${pageHead('Tableau de bord responsable', 'Validez les inscriptions, lisez les messages, publiez et gérez les coordonnées du CSE.')}
       <div class="wrap page-body">
@@ -1993,12 +1993,12 @@ const Views = {
 };
 
 async function userAction(id, op) {
-  const labels = { delete: 'Supprimer définitivement ce compte ?', suspend: 'Suspendre l’accès de ce compte ?', elu: 'Nommer cette personne administrateur·rice ? Elle pourra publier, lire les messages, traiter adhésions et billetterie, et valider les comptes.', salarie: 'Retirer les droits d’administrateur de cette personne ?', owner: 'Donner la main sur les administrateurs à cette personne ? Elle pourra, comme vous, nommer et retirer des administrateurs.', unowner: 'Lui retirer la main sur les administrateurs ? Elle restera administrateur·rice.' };
+  const labels = { delete: 'Supprimer définitivement ce compte ?', suspend: 'Suspendre l’accès de ce compte ?', elu: 'Nommer cette personne administrateur ? Elle pourra publier, lire les messages, traiter adhésions et billetterie, et valider les comptes.', salarie: 'Retirer les droits d’administrateur (repasser salarié·e) ?', owner: 'Donner la main sur les administrateurs à cette personne ? Elle pourra, comme vous, nommer et retirer des administrateurs.', unowner: 'Lui retirer la main ? Elle restera administrateur.' };
   if (labels[op] && !confirm(labels[op])) return;
   try {
     const r = await Store.userOp(id, op);
     if (op === 'reset' && r && r.temp) alert(`Nouveau mot de passe provisoire : ${r.temp}\n\nCommuniquez-le à la personne : elle pourra le changer dans « Mon compte ».`);
-    toast({ approve: 'Compte validé.', delete: 'Compte supprimé.', suspend: 'Accès suspendu.', elu: 'Administrateur·rice nommé·e.', salarie: 'Droits d’administrateur retirés.', owner: 'Main donnée sur les administrateurs.', unowner: 'Main retirée.', reset: 'Mot de passe réinitialisé.' }[op] || 'OK');
+    toast({ approve: 'Compte validé.', delete: 'Compte supprimé.', suspend: 'Accès suspendu.', elu: 'Administrateur nommé.', salarie: 'Droits d’administrateur retirés.', owner: 'Main donnée sur les administrateurs.', unowner: 'Main retirée.', reset: 'Mot de passe réinitialisé.' }[op] || 'OK');
     render();
   } catch (e) { toast(e.message); }
 }
