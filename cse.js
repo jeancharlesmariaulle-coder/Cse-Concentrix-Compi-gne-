@@ -347,20 +347,20 @@ async function wpSend(sub, payload) {
     headers: { TTL: '86400', Urgency: 'high', 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', Authorization: vapidAuth(sub.endpoint) } });
   return r.status;
 }
-const PUSH_PREFS = ['chat', 'global', 'elus', 'contact', 'gestion'];
+const PUSH_PREFS = ['chat', 'global', 'elus', 'contact', 'gestion', 'mention'];
 const pushId = ep => crypto.createHash('sha256').update(String(ep)).digest('base64url').slice(0, 24);
 /* to : 'all' | 'admins' | 'elus' | uid ; except : uid de l'auteur ; pref : type de notification */
-async function notify({ to, except, pref, title, body, url = '/', tag }) {
+async function notify({ to, except, exceptList = [], pref, title, body, url = '/', tag }) {
   if (!(VAPID_PUBLIC && VAPID_PRIVATE && REDIS_URL)) return;
   try {
     const f = (await redis('HGETALL', 'cse:push')) || []; let subs = [];
     for (let i = 0; i < f.length; i += 2) { try { const o = JSON.parse(f[i + 1]); o.k = f[i]; subs.push(o); } catch {} }
-    subs = subs.filter(o => o.uid !== except && (!pref || !o.prefs || o.prefs[pref] !== false));
+    subs = subs.filter(o => o.uid !== except && !exceptList.includes(o.uid) && (!pref || !o.prefs || o.prefs[pref] !== false));
     if (to !== 'all') {
       if (to === 'admins' || to === 'elus') {
         const users = Object.fromEntries((await allUsers()).map(u => [u.id, u])); users.admin = ADMIN_USER;
         subs = subs.filter(o => { const u = users[o.uid]; return u && u.status === 'active' && (to === 'admins' ? u.role === 'elu' : isEluCse(u)); });
-      } else subs = subs.filter(o => o.uid === to);
+      } else { const set = new Set([].concat(to)); subs = subs.filter(o => set.has(o.uid)); }
     }
     const payload = { title: String(title).slice(0, 80), body: String(body || '').slice(0, 180), url, tag: tag || pref || 'cgt' };
     for (let i = 0; i < subs.length; i += 40) {
@@ -368,6 +368,15 @@ async function notify({ to, except, pref, title, body, url = '/', tag }) {
       for (const [j, r] of res.entries()) if (r.status === 'fulfilled' && (r.value === 404 || r.value === 410)) await redis('HDEL', 'cse:push', subs[i + j].k);
     }
   } catch (e) { console.warn('notify', e.message); }
+}
+
+
+/* Mentions « @Prénom Nom » : seules les personnes réellement citées dans le texte sont retenues */
+async function resolveMentions(ids, text, onlyElus) {
+  ids = [...new Set((Array.isArray(ids) ? ids : []).map(String))].slice(0, 15); if (!ids.length || !text) return [];
+  const users = Object.fromEntries((await allUsers()).map(u => [u.id, u])); users.admin = ADMIN_USER;
+  return ids.map(id => users[id]).filter(u => u && u.status === 'active' && (!onlyElus || isEluCse(u)))
+    .map(u => ({ id: u.id, name: u.id === 'admin' ? 'Section CGT' : `${u.prenom} ${u.nom}`.trim() })).filter(m => text.includes('@' + m.name));
 }
 
 const A = {
@@ -626,8 +635,10 @@ const A = {
     if (!text && !(b.file && b.file.data)) throw fail(400, 'Publication vide.');
     await rateLimit(req, 'post', 15);
     const p = { id: newId(), uid: u.id, by: who(u), elu: u.role === 'elu', service: u.id === 'admin' ? '' : (u.service || ''), text, at: new Date().toISOString() };
+    const mentions = (await resolveMentions(b.mentions, text, false)).filter(m => m.id !== u.id); if (mentions.length) p.mentions = mentions;
     if (b.file && b.file.data) Object.assign(p, await saveDataFile(b.file));
     await redis('HSET', 'cse:feed', p.id, JSON.stringify(p));
+    if (mentions.length) await notify({ to: mentions.map(m => m.id), pref: 'mention', title: `📣 ${p.by} vous a mentionné·e`, body: `Messagerie : ${text}`, url: '/#/communaute', tag: 'mention' });
     // on garde les FEED_MAX publications les plus récentes
     const n = Number(await redis('HLEN', 'cse:feed'));
     if (n > FEED_MAX) {
@@ -674,6 +685,7 @@ const A = {
     if (!text && !(b.file && b.file.data)) throw fail(400, 'Message vide.');
     await rateLimit(req, 'grp', 120);
     const msg = { uid: u.id, by: who(u), elu: u.role === 'elu', typ: u.type === 'elu' ? 'elu' : '', text, at: new Date().toISOString() };
+    const mentions = (await resolveMentions(b.mentions, text, !!room)).filter(m => m.id !== u.id); if (mentions.length) msg.mentions = mentions;
     if (b.file && b.file.data) Object.assign(msg, await saveMedia(b.file));
     const m = await groupMeta(room); msg.i = m.n;
     const len = Number(await redis('RPUSH', LK, JSON.stringify(msg)));
@@ -684,9 +696,18 @@ const A = {
       await redis('LTRIM', LK, len - GROUP_KEEP, -1); m.base = m.n - GROUP_KEEP;
     }
     await redis('SET', MK, JSON.stringify(m));
-    await notify(room ? { to: 'elus', except: u.id, pref: 'elus', title: '🗳️ Discussion élus', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/elus', tag: 'grp-elus' }
-      : { to: 'all', except: u.id, pref: 'global', title: '👥 Discussion globale', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/discussion', tag: 'grp' });
+    if (mentions.length) await notify({ to: mentions.map(m => m.id), pref: 'mention', title: `📣 ${msg.by} vous a mentionné·e`, body: `${room ? '🗳️ Discussion élus' : '👥 Discussion globale'} : ${text}`, url: room ? '/#/communaute/elus' : '/#/communaute/discussion', tag: 'mention' });
+    const ml = mentions.map(m => m.id);
+    await notify(room ? { to: 'elus', except: u.id, exceptList: ml, pref: 'elus', title: '🗳️ Discussion élus', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/elus', tag: 'grp-elus' }
+      : { to: 'all', except: u.id, exceptList: ml, pref: 'global', title: '👥 Discussion globale', body: `${msg.by} : ${text || '📷 Photo / vidéo'}`, url: '/#/communaute/discussion', tag: 'grp' });
     return { n: m.n, msg };
+  },
+
+  async members(req) { // annuaire pour les mentions @ : prénom, nom, type (pas d'email)
+    await need(req);
+    const items = (await allUsers()).filter(u => u.status === 'active').map(u => ({ id: u.id, prenom: u.prenom, nom: u.nom, elu: isEluCse(u) ? 1 : 0 }));
+    items.push({ id: 'admin', prenom: 'Section', nom: 'CGT', elu: 1 });
+    return { items: items.sort((a, b) => (a.prenom + a.nom).localeCompare(b.prenom + b.nom, 'fr')) };
   },
 
   async push(req) {

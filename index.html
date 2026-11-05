@@ -1202,6 +1202,23 @@ body:has(#install-banner:not([hidden])) .notif-banner{bottom:100px}
 .notif-item input:focus-visible~.sw{outline:3px solid #E6007E;outline-offset:2px}
 .notif-btns{display:flex;gap:8px;flex-wrap:wrap}
 @media (max-width:620px){.notif-btns .btn{flex:1 1 100%;justify-content:center}}
+/* Mentions @ */
+.has-mention{position:relative}
+.mention-pop{position:absolute;left:8px;right:8px;bottom:calc(100% + 6px);z-index:30;background:#fff;border-radius:12px;box-shadow:0 12px 30px rgba(14,26,51,.22);border:1.5px solid #F3B9D6;padding:6px;max-height:300px;overflow:auto}
+#post-form .mention-pop{bottom:auto;top:calc(100% - 50px)}
+.mention-pop[hidden]{display:none!important}
+.mp-head{margin:2px 6px 6px;font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#E30613}
+.mp-empty{margin:6px;font-size:13px;color:var(--ink-2)}
+.mp-item{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;padding:8px;border-radius:8px;cursor:pointer;font:inherit;text-align:left;color:var(--ink)}
+.mp-item.on,.mp-item:hover{background:#FCE4F0}
+.mp-name{flex:1;font-weight:700;font-size:14px}
+.mention{color:#E30613;font-weight:800;background:#FCE4F0;border-radius:6px;padding:0 3px}
+.grp-msg.mine .mention{color:#fff;background:rgba(255,255,255,.22)}
+.mention.me{background:#FFD200;color:#0E1A33}
+.grp-msg.mentioned .grp-bubble{box-shadow:0 0 0 3px #FFD200}
+.for-you{display:inline-block;background:#FFD200;color:#0E1A33;font-size:11px;font-weight:900;border-radius:999px;padding:2px 8px;margin:0 0 4px}
+.post.mentioned{box-shadow:0 0 0 3px #FFD200,var(--shadow)}
+.post .for-you{margin:0 0 8px}
 
 </style>
 </head>
@@ -2963,11 +2980,11 @@ const Feed = { items: [], v: -1, timer: null, lastAct: 0, photo: null };
 function postHtml(p) {
   const me = Store.user || {}; const canDel = p.uid === me.id || me.role === 'elu';
   const img = p.fileId ? Store.link(p.fileId, p.fileName) : '';
-  return `<article class="post" data-post="${esc(p.id)}">
+  return `<article class="post ${mentionsMe(p) ? 'mentioned' : ''}" data-post="${esc(p.id)}">${mentionsMe(p) ? '<span class="for-you">📣 Vous êtes mentionné·e</span>' : ''}
     <header><span class="avatar initials sm ${p.elu ? 'elu' : ''}">${esc(initialsOf(p.by))}</span>
       <div><strong>${esc(p.by)}</strong>${p.elu ? ' <span class="badge-cgt">Responsable CGT</span>' : ''}<small>${[p.service, timeAgo(p.at)].filter(Boolean).map(esc).join(' · ')}</small></div>
       ${canDel ? `<button type="button" class="icon-btn" data-post-del="${esc(p.id)}" aria-label="Supprimer la publication" title="Supprimer">${icon('trash')}</button>` : ''}</header>
-    ${p.text ? longText(p.text, { chars: 420, lines: 8, cls: 'post-text' }) : ''}
+    ${p.text ? hlMentions(longText(p.text, { chars: 420, lines: 8, cls: 'post-text' }), p.mentions) : ''}
     ${img ? `<a class="post-img" href="${img}" target="_blank" rel="noopener"><img src="${img}" alt="" loading="lazy"></a>` : ''}
     ${socialBar('feed:' + p.id, { comments: true })}
   </article>`;
@@ -3031,7 +3048,7 @@ Object.assign(Views, {
     if ($('#grp')) return groupAfter();
     if ($('#contact-form')) return Views.afterContact();
     if (!$('#post-form')) return;
-    feedList(); reloadOpenComments(); Feed.lastAct = Date.now(); feedTick();
+    feedList(); reloadOpenComments(); Feed.lastAct = Date.now(); feedTick(); mentionAttach($('#post-text'), false);
     const pv = $('#post-photo');
     $('#post-file').onchange = async e => { const fl = e.target.files[0]; if (!fl) return; try { Feed.photo = await compressImage(fl, 1400, .82); pv.querySelector('img').src = Feed.photo.data; pv.hidden = false; } catch { toast('Photo illisible.'); } e.target.value = ''; };
     $('#post-photo-x').onclick = () => { Feed.photo = null; pv.hidden = true; };
@@ -3039,7 +3056,7 @@ Object.assign(Views, {
       e.preventDefault(); const ta = $('#post-text'), text = ta.value.trim();
       if (!text && !Feed.photo) { ta.focus(); return; }
       const b = $('#post-go'); b.disabled = true;
-      try { await Store.call('feed', { method: 'POST', body: { text, file: Feed.photo } }); ta.value = ''; ta.style.height = 'auto'; Feed.photo = null; pv.hidden = true; await feedFetch(); feedList(); toast('Publié !'); }
+      try { await Store.call('feed', { method: 'POST', body: { text, file: Feed.photo, mentions: mentionIds(ta, text) } }); ta._mentions = new Map(); ta.value = ''; ta.style.height = 'auto'; Feed.photo = null; pv.hidden = true; await feedFetch(); feedList(); toast('Publié !'); }
       catch (x) { toast(x.message); } finally { b.disabled = false; }
     };
   },
@@ -3112,11 +3129,11 @@ function grpMsgHtml(m, prev) {
   const media = m.fileId ? (/^video\//.test(m.fileType) ? `<video src="${Store.link(m.fileId, m.fileName)}" controls playsinline preload="metadata"></video>`
     : `<a href="${Store.link(m.fileId, m.fileName)}" target="_blank" rel="noopener"><img src="${Store.link(m.fileId, m.fileName)}" alt="" loading="lazy"></a>`) : '';
   const canDel = mine || me.role === 'elu';
-  return sep + `<div class="grp-msg ${mine ? 'mine' : ''} ${sameAuthor && !newDay ? 'cont' : ''}" data-i="${m.i}">
+  return sep + `<div class="grp-msg ${mine ? 'mine' : ''} ${sameAuthor && !newDay && !mentionsMe(m) ? 'cont' : ''} ${mentionsMe(m) ? 'mentioned' : ''}" data-i="${m.i}">
     ${mine ? '' : `<span class="avatar initials xs ${m.elu ? 'elu' : ''}">${esc(initialsOf(m.by))}</span>`}
     <div class="grp-col">
       ${mine || (sameAuthor && !newDay) ? '' : `<div class="grp-name">${esc(m.by)}${m.typ === 'elu' ? ' <span class="badge-elu">🗳️ Élu·e</span>' : ''}${m.elu ? ' <span class="badge-cgt">CGT</span>' : ''}</div>`}
-      <div class="grp-bubble ${media && !m.text ? 'media-only' : ''}">${media}${m.text ? `<p>${linkify(m.text)}</p>` : ''}
+      <div class="grp-bubble ${media && !m.text ? 'media-only' : ''}">${mentionsMe(m) ? '<span class="for-you">📣 Pour vous</span>' : ''}${media}${m.text ? `<p>${hlMentions(linkify(m.text), m.mentions)}</p>` : ''}
         <span class="grp-time">${new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span></div>
       ${canDel ? `<button type="button" class="grp-del" data-grp-del="${m.i}" aria-label="Supprimer ce message">Supprimer</button>` : ''}
     </div></div>`;
@@ -3167,7 +3184,7 @@ function groupView(room = '') {
         <div class="grp-file" id="grp-file" hidden><span id="grp-file-prev"></span><button type="button" class="icon-btn" id="grp-file-x" aria-label="Retirer le fichier">${icon('x')}</button></div>
         <form class="grp-form" id="grp-form">
           <label class="icon-btn grp-attach" title="Photo ou vidéo" aria-label="Ajouter une photo ou une vidéo"><input type="file" id="grp-input" accept="image/*,video/*" hidden>${icon('image')}</label>
-          <textarea id="grp-text" rows="1" maxlength="2000" placeholder="${elus ? 'Écrire aux élu·e·s…' : 'Écrire à tout le monde…'}" aria-label="Écrire au groupe"></textarea>
+          <textarea id="grp-text" rows="1" maxlength="2000" placeholder="${elus ? 'Écrire aux élu·e·s… (@ pour citer)' : 'Écrire à tout le monde… (@ pour citer)'}" aria-label="Écrire au groupe"></textarea>
           <button class="icon-btn send" id="grp-send" aria-label="Envoyer">${icon('send')}</button>
         </form>
       </section>
@@ -3178,7 +3195,7 @@ async function groupAfter() {
   Group.lastAct = Date.now();
   try { await grpLoad(true); grpRender(true); } catch (e) { $('#grp-list').innerHTML = `<p class="note" style="padding:20px">${esc(e.message)}</p>`; }
   grpTick();
-  const ta = $('#grp-text'), fileBox = $('#grp-file');
+  const ta = $('#grp-text'), fileBox = $('#grp-file'); mentionAttach(ta, Group.room === 'elus');
   ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'; };
   ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !/Mobi|Android/i.test(navigator.userAgent)) { e.preventDefault(); $('#grp-form').requestSubmit(); } };
   $('#grp-input').onchange = async e => {
@@ -3196,7 +3213,7 @@ async function groupAfter() {
     e.preventDefault(); const text = ta.value.trim(); if ((!text && !Group.file) || Group.busy) return;
     Group.busy = true; const btn = $('#grp-send'); btn.disabled = true; const file = Group.file;
     try {
-      await Store.call('group', { method: 'POST', query: grpQ(), body: { text, file } });
+      await Store.call('group', { method: 'POST', query: grpQ(), body: { text, file, mentions: mentionIds(ta, text) } }); ta._mentions = new Map();
       ta.value = ''; ta.style.height = 'auto'; Group.file = null; fileBox.hidden = true;
       await grpLoad(false); grpRender(true); Group.lastAct = Date.now(); grpTick();
     } catch (x) { toast(x.message); } finally { Group.busy = false; btn.disabled = false; ta.focus(); }
@@ -3503,7 +3520,7 @@ async function notifSettings() {
   closeDrop();
   const u = Store.user || {}, admin = u.role === 'elu', pr = Notif.prefs;
   const sub = Notif.ok ? await Notif.sub() : null, on = !!sub && Notification.permission === 'granted';
-  const items = [['chat', '💬', 'Messagerie privée', admin ? 'Messages des salarié·e·s à la section' : 'Réponses de la section CGT'], ['global', '👥', 'Discussion globale', 'Nouveaux messages du salon de tous les membres'],
+  const items = [['mention', '📣', 'Mentions @', 'Quand quelqu’un vous cite avec @ dans un message'], ['chat', '💬', 'Messagerie privée', admin ? 'Messages des salarié·e·s à la section' : 'Réponses de la section CGT'], ['global', '👥', 'Discussion globale', 'Nouveaux messages du salon de tous les membres'],
     ...(isEluCse(u) ? [['elus', '🗳️', 'Discussion élus', 'Nouveaux messages entre élu·e·s']] : []),
     ...(admin ? [['contact', '✉️', '« Nous contacter »', 'Messages envoyés par le formulaire'], ['gestion', '🎟️', 'Billetterie & adhésions', 'Nouvelles commandes et adhésions en ligne']] : [])];
   const why = !Notif.ok ? (isIOS() ? "Sur iPhone, installez d'abord l'application : bouton Partager ⬆️ puis « Sur l'écran d'accueil ». Ouvrez-la depuis l'icône, puis revenez ici." : 'Ce navigateur ne gère pas les notifications. Essayez Chrome ou Samsung Internet.')
@@ -3531,6 +3548,69 @@ document.addEventListener('click', e => {
   if (e.target.closest('#notif-x')) { ls.set('cse-notif-x', Date.now() + 7 * 864e5); $('#notif-banner').hidden = true; }
   if (e.target.closest('#notif-go')) { $('#notif-banner').hidden = true; Notif.enable(true).then(() => toast('Notifications activées !')).catch(x => { toast(x.message); }); }
 });
+
+/* =========================================================================
+   Mentions @ : taper « @ » puis quelques lettres (accents et petites fautes
+   tolérés) pour citer une personne ; elle reçoit une notification.
+   ========================================================================= */
+const Members = { list: null, at: 0 };
+async function membersLoad() {
+  if (!Members.list || Date.now() - Members.at > 6e5) { try { Members.list = (await Store.call('members')).items || []; Members.at = Date.now(); } catch { Members.list = Members.list || []; } }
+  return Members.list;
+}
+const fold = v => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+function lev(a, b) { const d = Array.from({ length: a.length + 1 }, (_, i) => [i]); for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length]; }
+const mName = m => m.id === 'admin' ? 'Section CGT' : `${m.prenom} ${m.nom}`.trim();
+function mentionSearch(q, onlyElus) {
+  const f = fold(q).trim(), me = (Store.user || {}).id;
+  const L = (Members.list || []).filter(m => m.id !== me && (!onlyElus || m.elu));
+  if (!f) return L.slice(0, 8);
+  const out = [];
+  for (const m of L) {
+    const p = fold(m.prenom), n = fold(m.nom), full = p + ' ' + n, rev = n + ' ' + p, words = full.split(/[\s'-]+/);
+    let sc = full.startsWith(f) || rev.startsWith(f) ? 0 : words.some(w => w.startsWith(f)) ? 1 : full.includes(f) ? 2 : -1;
+    if (sc < 0 && f.length >= 3 && !f.includes(' ')) { const tol = f.length >= 6 ? 2 : 1; if (words.some(w => lev(w.slice(0, f.length), f) <= tol || lev(w, f) <= tol)) sc = 3; }
+    if (sc >= 0) out.push([sc, m]);
+  }
+  return out.sort((a, b) => a[0] - b[0] || mName(a[1]).localeCompare(mName(b[1]), 'fr')).slice(0, 8).map(x => x[1]);
+}
+function mentionIds(ta, text) { return [...(ta._mentions || new Map())].filter(([name]) => text.includes('@' + name)).map(([, id]) => id); }
+const mentionsMe = m => !!(m && m.mentions && Store.user && m.mentions.some(x => x.id === Store.user.id));
+function hlMentions(html, mentions) {
+  for (const m of mentions || []) { const t = esc('@' + m.name); html = html.split(t).join(`<span class="mention ${Store.user && m.id === Store.user.id ? 'me' : ''}">${t}</span>`); }
+  return html;
+}
+function mentionAttach(ta, onlyElus) {
+  if (!ta || ta._mentionOn) return; ta._mentionOn = true; ta._mentions = new Map(); membersLoad();
+  const host = ta.closest('form') || ta.parentNode; host.classList.add('has-mention');
+  const pop = document.createElement('div'); pop.className = 'mention-pop'; pop.hidden = true; pop.setAttribute('role', 'listbox'); host.appendChild(pop);
+  let res = [], sel = 0, start = -1;
+  const close = () => { pop.hidden = true; res = []; start = -1; };
+  const query = () => { const before = ta.value.slice(0, ta.selectionStart); const m = /(^|\s)@([^\s@]{0,24}(?: [^\s@]{0,24})?)$/u.exec(before); return m ? { q: m[2], at: before.length - m[2].length - 1 } : null; };
+  const draw = () => {
+    pop.innerHTML = res.length ? `<p class="mp-head">Citer une personne${onlyElus ? ' (élu·e·s)' : ''}</p>` + res.map((m, i) => `<button type="button" role="option" class="mp-item ${i === sel ? 'on' : ''}" data-mi="${i}">
+      <span class="avatar initials xs ${m.elu ? 'elu' : ''}">${esc(initialsOf(mName(m)))}</span><span class="mp-name">${esc(mName(m))}</span>${m.elu ? '<span class="badge-elu">🗳️ Élu·e</span>' : ''}</button>`).join('')
+      : `<p class="mp-empty">Personne ne correspond. Vérifiez l'orthographe.</p>`;
+    pop.hidden = false;
+  };
+  const update = async () => { const q = query(); if (!q) return close(); start = q.at; await membersLoad(); res = mentionSearch(q.q, onlyElus); sel = 0; if (!res.length && q.q.length < 2) return close(); draw(); };
+  const pick = i => {
+    const m = res[i]; if (!m) return; const name = mName(m); const caret = ta.selectionStart;
+    ta.value = ta.value.slice(0, start) + '@' + name + ' ' + ta.value.slice(caret); const pos = start + name.length + 2;
+    ta._mentions.set(name, m.id); close(); ta.focus(); ta.setSelectionRange(pos, pos); ta.dispatchEvent(new Event('input'));
+  };
+  ta.addEventListener('input', update); ta.addEventListener('click', update); ta.addEventListener('blur', () => setTimeout(close, 200));
+  host.addEventListener('keydown', e => {
+    if (pop.hidden || !res.length || e.target !== ta) { if (e.key === 'Escape') close(); return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); sel = (sel + (e.key === 'ArrowDown' ? 1 : res.length - 1)) % res.length; draw(); }
+    else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); pick(sel); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+  }, true);
+  pop.addEventListener('mousedown', e => e.preventDefault());
+  pop.addEventListener('click', e => { const b = e.target.closest('[data-mi]'); if (b) pick(Number(b.dataset.mi)); });
+}
 
 </script>
 </body>
