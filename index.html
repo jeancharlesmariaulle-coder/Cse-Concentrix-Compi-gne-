@@ -1261,6 +1261,20 @@ body:has(#install-banner:not([hidden])) .notif-banner{bottom:100px}
 .up-item[data-pct]::after{content:attr(data-pct);position:absolute;inset:0;display:grid;place-items:center;background:rgba(14,26,51,.45);color:#fff;font-weight:900;font-size:15px}
 .up-item.done::after,.up-item.fail::after{content:none}
 .gf-p{position:absolute;inset:0;display:grid;place-items:center;background:rgba(14,26,51,.55);color:#fff;font-size:11px}
+/* Albums de la galerie (même légende) */
+.gal-album{display:grid;gap:2px;background:#fff;text-decoration:none;cursor:pointer;box-shadow:0 0 0 3px #fff,6px 6px 0 #E6007E}
+.gal-album.n1{grid-template-columns:1fr}
+.gal-album.n2{grid-template-columns:1fr 1fr}
+.gal-album.n3{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}.gal-album.n3 .ga-cell:first-child{grid-row:1/3}
+.gal-album.n4{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
+.ga-cell{position:relative;overflow:hidden;min-height:0;background:#0E1A33;display:block}
+.ga-cell img,.ga-cell .vid-ph{width:100%;height:100%;object-fit:cover;display:block}
+.ga-cell .vid-ph{display:grid;place-items:center;color:#fff}
+.ga-badge{position:absolute;top:10px;left:10px;z-index:2;background:linear-gradient(120deg,#E30613,#E6007E);color:#fff;font-weight:900;font-size:13px;border-radius:999px;padding:4px 10px;box-shadow:0 3px 10px rgba(0,0,0,.25)}
+.gal-album .cap{z-index:2}
+.gal-album .cap strong{display:block}
+.gal-album .cap small{display:block;font-weight:600;opacity:.9;font-size:12px}
+.album-back{display:inline-flex;margin-bottom:14px}
 
 </style>
 </head>
@@ -1979,13 +1993,22 @@ const Views = {
         : emptyState('ic-documents.jpg', 'Aucun document pour le moment', 'Les documents de la section seront disponibles ici au téléchargement.', 'documents')}</div></div>`;
   },
 
-  async galerie() {
+  async galerie(id) {
     await Social.load();
     const [own, actus] = await Promise.all([safeList('galerie'), safeList('actus')]);
     /* Les photos des actualités apparaissent automatiquement dans la galerie (album « Actualités ») */
     const fromActus = actus.filter(isImg).map(x => ({ id: 'actu-' + x.id, fromActu: x.id, titre: x.titre, album: 'Actualités', date: x.date || String(x.created || '').slice(0, 10), created: x.created,
       fileId: x.fileId, fileName: x.fileName, fileType: x.fileType, fileData: x.fileData }));
-    const items = [...own, ...fromActus].sort((a, b) => String(b.date || b.created).localeCompare(String(a.date || a.created)));
+    const all = [...own, ...fromActus].sort((a, b) => String(b.date || b.created).localeCompare(String(a.date || a.created)));
+    /* Albums : les éléments qui portent exactement la même légende (hors actualités) sont regroupés */
+    const akey = t => fold(t).replace(/\s+/g, ' ').trim();
+    const groups = new Map();
+    for (const it of all) if (!it.fromActu && akey(it.titre)) { const k = akey(it.titre); groups.set(k, [...(groups.get(k) || []), it]); }
+    const slug = k => encodeURIComponent(k.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'album');
+    const albumOf = new Map([...groups].filter(([, l]) => l.length > 1).map(([k, l]) => [k, { key: k, slug: slug(k), titre: l[0].titre, items: l }]));
+    const albumBySlug = Object.fromEntries([...albumOf.values()].map(a => [a.slug, a]));
+    const openAlbum = id && id.startsWith('album-') ? albumBySlug[encodeURIComponent(decodeURIComponent(id.slice(6)))] || albumBySlug[id.slice(6)] : null;
+    const items = openAlbum ? openAlbum.items : all;
     window._gal = items;
     const albums = [...new Set(items.map(x => x.album).filter(Boolean))];
     const isVid = it => it.video || /^video\//.test(it.fileType || '');
@@ -1995,9 +2018,22 @@ const Views = {
       return v && v.thumb ? `<img src="${v.thumb}" alt="${esc(it.titre || 'Vidéo')}" loading="lazy">` : `<span class="vid-ph">${icon('play')}</span>`;
     };
     const kinds = items.some(isVid) && items.some(x => !isVid(x));
+    const card = (it, i) => `<div style="position:relative" data-cat="${esc(it.album || '')}" data-kind="${isVid(it) ? '__video' : '__photo'}">${it.fromActu ? '' : adminActions('galerie', it.id)}<button class="gal-item${isVid(it) ? ' is-video' : ''}" data-lb="${i}" aria-label="Ouvrir ${esc(it.titre || (isVid(it) ? 'la vidéo' : 'la photo'))}">${thumb(it)}${isVid(it) ? `<span class="play">${icon('play')}</span>` : ''}${!openAlbum && (it.titre || it.album) ? `<span class="cap">${esc(it.titre || it.album)}</span>` : ''}</button></div>`;
+    const albumCard = a => { const nv = a.items.filter(isVid).length, np = a.items.length - nv; const cov = a.items.slice(0, 4);
+      return `<div style="position:relative" data-cat="${esc(a.items.every(x => x.album === a.items[0].album) ? a.items[0].album || '' : '')}" data-kind="${[np ? '__photo' : '', nv ? '__video' : ''].join(' ').trim()}">
+        <a class="gal-item gal-album n${cov.length}" href="#/galerie/album-${a.slug}" aria-label="Ouvrir l'album ${esc(a.titre)}">${cov.map(it => `<span class="ga-cell">${thumb(it)}</span>`).join('')}
+        <span class="ga-badge">📁 ${a.items.length}</span><span class="cap"><strong>${esc(a.titre)}</strong><small>${[np ? `${np} photo${np > 1 ? 's' : ''}` : '', nv ? `${nv} vidéo${nv > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')}</small></span></a></div>`; };
+    if (openAlbum) {
+      const nv = items.filter(isVid).length, np = items.length - nv;
+      return `<div class="page">${pageHead(esc(openAlbum.titre), `Album · ${[np ? `${np} photo${np > 1 ? 's' : ''}` : '', nv ? `${nv} vidéo${nv > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')}`, 'galerie')}
+        <div class="wrap page-body"><a class="text-link album-back" href="#/galerie">${icon('chevron-left')}Toutes les photos & vidéos</a>
+        <div class="gal" data-list>${items.map(card).join('')}</div></div></div>`;
+    }
+    const shown = new Set(); const tiles = [];
+    all.forEach((it, i) => { const a = !it.fromActu && albumOf.get(akey(it.titre)); if (a) { if (!shown.has(a.key)) { shown.add(a.key); tiles.push(albumCard(a)); } } else tiles.push(card(it, i)); });
     return `<div class="page">${pageHead('Photos & vidéos', 'Revivez nos événements en images.', 'galerie')}
       <div class="wrap page-body">${items.length ? `${albums.length > 1 || kinds ? `<div class="toolbar"><button class="chip on" data-filter="">Tout</button>${kinds ? '<button class="chip" data-filter="__video">Vidéos</button><button class="chip" data-filter="__photo">Photos</button>' : ''}${albums.map(c => `<button class="chip" data-filter="${esc(c)}">${esc(c)}</button>`).join('')}</div>` : ''}
-        <div class="gal" data-list>${items.map((it, i) => `<div style="position:relative" data-cat="${esc(it.album || '')}" data-kind="${isVid(it) ? '__video' : '__photo'}">${it.fromActu ? '' : adminActions('galerie', it.id)}<button class="gal-item${isVid(it) ? ' is-video' : ''}" data-lb="${i}" aria-label="Ouvrir ${esc(it.titre || (isVid(it) ? 'la vidéo' : 'la photo'))}">${thumb(it)}${isVid(it) ? `<span class="play">${icon('play')}</span>` : ''}${it.titre || it.album ? `<span class="cap">${esc(it.titre || it.album)}</span>` : ''}</button></div>`).join('')}</div>`
+        <div class="gal" data-list>${tiles.join('')}</div>`
         : emptyState('ic-galerie.jpg', 'Pas encore de photos ni de vidéos', 'Les photos et vidéos de nos événements seront partagées ici.', 'galerie')}</div></div>`;
   },
 
@@ -2327,7 +2363,7 @@ document.addEventListener('input', e => { if (e.target.matches('[data-search]'))
 function filterList() {
   const cat = $('[data-filter].on')?.dataset.filter || '';
   const q = ($('[data-search]')?.value || '').toLowerCase().trim();
-  $$('[data-list]>[data-cat]').forEach(el => { el.hidden = (cat && el.dataset.cat !== cat && el.dataset.kind !== cat) || (q && !(el.dataset.text || '').includes(q)); });
+  $$('[data-list]>[data-cat]').forEach(el => { el.hidden = (cat && el.dataset.cat !== cat && !(el.dataset.kind || '').split(' ').includes(cat)) || (q && !(el.dataset.text || '').includes(q)); });
 }
 
 $('#burger').onclick = () => { const o = $('#main-nav').classList.toggle('open'); $('#burger').setAttribute('aria-expanded', o); };
@@ -3836,6 +3872,11 @@ async function mediaPrepare(fl, onProg) {
   try { return await bigUpload(fl, onProg); }
   catch (e) { if (fl.size <= 2.4 * 1024 * 1024) return { name: fl.name, data: await readAsDataURL(fl) }; throw new Error(`${fl.name} : ${e.message}`); }
 }
+/* Dans un album : « Ajouter » reprend automatiquement la légende de l'album */
+document.addEventListener('click', e => {
+  if (!e.target.closest('[data-add="galerie"]')) return; const r = parseRoute();
+  if (r.name === 'galerie' && /^album-/.test(r.id || '')) setTimeout(() => { const t = $('#modal-form')?.elements?.titre; const h = $('.page-head h1'); if (t && h && !t.value) t.value = h.textContent.trim(); }, 0);
+});
 
 </script>
 </body>
