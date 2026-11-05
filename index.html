@@ -1228,6 +1228,15 @@ body:has(#install-banner:not([hidden])) .notif-banner{bottom:100px}
 .mp-all{background:linear-gradient(120deg,#FFF3C4,#fff)}
 .mp-all .mp-name small{display:block;font-weight:600;font-size:12px;color:var(--ink-2)}
 .mp-all .mp-ico{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#FFD200;font-size:15px}
+/* Invitations */
+.inv-msg{background:#F5F6FA;border-left:4px solid #E6007E;border-radius:8px;padding:12px 14px;font-size:14px;line-height:1.5;margin:8px 0 14px;overflow-wrap:anywhere}
+.inv-who{margin:0;font-size:15px}
+.inv-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.inv-btns .btn{justify-content:center;text-align:center}
+.inv-send>.btn{margin-top:4px}
+.inv-details summary{font-weight:800}
+.invite-ok{border-left:4px solid #16A05D}
+@media (max-width:520px){.inv-btns{grid-template-columns:1fr}}
 
 </style>
 </head>
@@ -1591,7 +1600,7 @@ const Store = {
       users.push({ id: 'u' + Date.now(), email, prenom: d.prenom, nom: d.nom, service: d.service, pw: d.password, role: 'salarie', status: 'pending', created: new Date().toISOString() });
       ls.set('cse-demo:users', users); return;
     }
-    await this.call('register', { method: 'POST', body: d });
+    return this.call('register', { method: 'POST', body: d });
   },
   logout() { ls.del('cse-token'); ls.del('cse-user'); this.user = null; this.cache = {}; },
   async users() { if (this.mode === 'demo') return ls.get('cse-demo:users', []); return (await this.call('users')).items; },
@@ -1766,6 +1775,16 @@ const Views = {
     const showTab = n => { $$('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === n)); $$('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== n); $('#auth-alert').innerHTML = ''; };
     $$('.tab').forEach(t => t.onclick = () => showTab(t.dataset.tab));
     const al = $('#auth-alert');
+    const inv = ss.get('cse-invite');
+    if (inv && Store.mode !== 'demo') fetch(`${API}?a=invite&check=${encodeURIComponent(inv)}`).then(async r => {
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { ss.del('cse-invite'); al.innerHTML = `<div class="alert warn">${esc(j.error || 'Invitation non valide.')}</div>`; return; }
+      showTab('register');
+      if (j.prenom) $('#r-prenom').value = j.prenom; if (j.nom) $('#r-nom').value = j.nom; if (j.email) $('#r-email').value = j.email;
+      al.innerHTML = `<div class="alert ok invite-ok">🎉 <strong>Vous êtes invité·e par ${esc(j.by || 'la section CGT')} !</strong><br>Choisissez un mot de passe : votre compte sera activé immédiatement, sans attente.</div>`;
+      $('#register-form .note').textContent = 'Invitation valable : pas besoin d’attendre une validation.';
+      (j.prenom ? $('#r-pw') : $('#r-prenom')).focus();
+    }).catch(() => {});
     $('#login-form').onsubmit = async e => {
       e.preventDefault(); const b = e.target.querySelector('button'); b.disabled = true;
       try { const u = await Store.login($('#l-email').value, $('#l-pw').value); toast(`Bonjour ${u.prenom} !`); updateChrome(); render(); }
@@ -1777,7 +1796,11 @@ const Views = {
       if (!d.prenom.trim() || !d.nom.trim() || !d.email.trim()) { al.innerHTML = '<div class="alert err">Remplissez prénom, nom et email.</div>'; return; }
       if ((d.password || '').length < 8) { al.innerHTML = '<div class="alert err">Le mot de passe doit faire au moins 8 caractères.</div>'; return; }
       const b = f.querySelector('button'); b.disabled = true;
-      try { await Store.register(d); f.reset(); showTab('login'); al.innerHTML = '<div class="alert ok"><strong>Compte créé !</strong> Un·e élu·e du CSE doit maintenant le valider. Vous pourrez ensuite vous connecter.</div>'; }
+      const inv = ss.get('cse-invite'); if (inv) d.invite = inv;
+      try {
+        const r = await Store.register(d);
+        if (r && r.status === 'active') { ss.del('cse-invite'); const u = await Store.login(d.email, d.password); toast(`Bienvenue ${u.prenom} ! Votre compte est activé.`); updateChrome(); location.hash = '#/'; render(); return; }
+        f.reset(); showTab('login'); al.innerHTML = '<div class="alert ok"><strong>Compte créé !</strong> Un·e élu·e du CSE doit maintenant le valider. Vous pourrez ensuite vous connecter.</div>'; }
       catch (err) { al.innerHTML = `<div class="alert err">${esc(err.message)}</div>`; }
       finally { b.disabled = false; }
     };
@@ -2045,6 +2068,8 @@ const Views = {
         <div class="toolbar">${cols.map(c => `<button class="btn btn-light" data-add="${c}">${icon('plus')}${add[c]}</button>`).join('')}<button class="btn btn-magenta" data-chat-open>${icon('chat')}Messagerie${Chat.unread ? ` (${Chat.unread})` : ''}</button></div>
 
         <h2 id="comptes" class="dash-h">Comptes des salarié·e·s <small>${users.length} au total</small></h2>
+        <div class="toolbar"><button class="btn btn-red" data-invite-new>✉️ Inviter des salarié·e·s</button></div>
+        ${await invitesSection()}
         ${pending.length ? `<h3 class="sub-h" style="margin-top:0">En attente de validation (${pending.length})</h3><div class="user-list">${pending.map(userRow).join('')}</div>` : '<p class="note" style="margin-top:0">Aucune inscription en attente.</p>'}
         ${others.length ? `<details class="user-details"><summary>Voir les ${others.length} compte(s) actif(s) ou suspendu(s)</summary><div class="user-list">${others.map(userRow).join('')}</div></details>` : ''}
 
@@ -3622,6 +3647,80 @@ function mentionAttach(ta, onlyElus) {
   pop.addEventListener('mousedown', e => e.preventDefault());
   pop.addEventListener('click', e => { const b = e.target.closest('[data-mi]'); if (b) pick(Number(b.dataset.mi)); });
 }
+
+/* =========================================================================
+   Invitations (administrateurs) : lien personnel à envoyer par email, SMS,
+   WhatsApp ou partage. Le compte créé avec ce lien est activé tout de suite.
+   ========================================================================= */
+const ss = { get(k) { try { return sessionStorage.getItem(k); } catch { return null; } }, set(k, v) { try { sessionStorage.setItem(k, v); } catch {} }, del(k) { try { sessionStorage.removeItem(k); } catch {} } };
+(() => { const q = new URLSearchParams(location.search); const t = q.get('invite'); if (t) { ss.set('cse-invite', t.slice(0, 40)); q.delete('invite'); history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash); } })();
+const invUrl = it => location.origin + '/?invite=' + it.id;
+const invText = it => `Bonjour${it.prenom ? ' ' + it.prenom : ''}, la section CGT Concentrix Compiègne vous invite sur son portail : actualités, agenda, billetterie CSE, messagerie… Votre compte sera activé tout de suite. Créez-le ici (1 minute) : ${invUrl(it)}`;
+const telIntl = t => { const d = String(t || '').replace(/[^\d+]/g, ''); return d.startsWith('+') ? d.slice(1) : d.startsWith('00') ? d.slice(2) : d.startsWith('0') ? '33' + d.slice(1) : d; };
+function invStatus(it) {
+  if (it.used) return ['green', `✅ Acceptée${it.usedName ? ' · ' + esc(it.usedName) : ''}`];
+  if (it.revoked) return ['grey', 'Annulée'];
+  if (Date.parse(it.exp) < Date.now()) return ['grey', 'Expirée'];
+  return [it.sent && it.sent.length ? 'yellow' : '', it.sent && it.sent.length ? `📨 Envoyée (${[...new Set(it.sent.map(x => x.via))].join(', ')})` : 'Pas encore envoyée'];
+}
+async function invitesSection() {
+  let items = []; try { items = (await Store.call('invite')).items || []; } catch {} window._inv = items;
+  if (!items.length) return '';
+  const wait = items.filter(x => !x.used && !x.revoked && Date.parse(x.exp) > Date.now()).length, ok = items.filter(x => x.used).length;
+  return `<details class="user-details inv-details"><summary>✉️ Invitations : ${ok} acceptée${ok > 1 ? 's' : ''} · ${wait} en attente</summary><div class="user-list">${items.map(it => { const [c, t] = invStatus(it); const live = !it.used && !it.revoked && Date.parse(it.exp) > Date.now();
+    return `<div class="user-row inv-row"><div class="avatar initials sm">✉️</div><div class="u-info"><strong>${esc([it.prenom, it.nom].filter(Boolean).join(' ') || 'Invitation sans nom')}</strong>
+      <small>${[it.email, it.tel].filter(Boolean).map(esc).join(' · ') || 'lien à partager'} · créée le ${new Date(it.created).toLocaleDateString('fr-FR')} par ${esc(it.byName || '')}${it.type === 'elu' ? ' · 🗳️ élu·e' : ''}</small></div>
+      <div class="u-actions"><span class="pill ${c}">${t}</span>${live ? `<button class="btn btn-light btn-sm" data-invite-send="${esc(it.id)}">📨 Envoyer</button><button class="icon-btn" data-invite-del="${esc(it.id)}" title="Annuler l'invitation" aria-label="Annuler l'invitation">${icon('x')}</button>` : ''}</div></div>`; }).join('')}</div></details>`;
+}
+function invForm() {
+  $('#modal-title').textContent = '✉️ Inviter un·e salarié·e';
+  $('#modal-body').innerHTML = `<div class="inv-form"><p class="note" style="margin-top:0">Renseignez au moins un email ou un téléphone. La personne reçoit un lien personnel : son compte est activé dès qu'elle l'a créé, sans validation.</p>
+    <div id="inv-alert"></div>
+    <div class="row-2"><div class="field"><label for="i-prenom">Prénom</label><input id="i-prenom" autocomplete="off"></div><div class="field"><label for="i-nom">Nom</label><input id="i-nom" autocomplete="off"></div></div>
+    <div class="field"><label for="i-email">Email</label><input id="i-email" type="email" inputmode="email" placeholder="prenom.nom@email.fr" autocomplete="off"></div>
+    <div class="field"><label for="i-tel">Téléphone portable <span class="hint">(pour le SMS ou WhatsApp)</span></label><input id="i-tel" type="tel" inputmode="tel" placeholder="06 12 34 56 78" autocomplete="off"></div>
+    <label class="field-check"><input type="checkbox" id="i-elu"> 🗳️ C'est un·e élu·e (accès à la discussion des élus)</label>
+    <button type="button" class="btn btn-red" id="inv-create" style="width:100%;justify-content:center;margin-top:12px">Créer l'invitation${icon('arrow')}</button></div>`;
+  $('#modal-form').onsubmit = e => { e.preventDefault(); $('#inv-create').click(); };
+  $('#inv-create').onclick = async () => {
+    const d = { prenom: $('#i-prenom').value.trim(), nom: $('#i-nom').value.trim(), email: $('#i-email').value.trim(), tel: $('#i-tel').value.trim(), type: $('#i-elu').checked ? 'elu' : 'salarie' };
+    if (!d.email && !d.tel) { $('#inv-alert').innerHTML = '<div class="alert err">Indiquez un email ou un téléphone.</div>'; return; }
+    const b = $('#inv-create'); b.disabled = true;
+    try { const r = await Store.call('invite', { method: 'POST', body: d }); (window._inv = window._inv || []).unshift(r.item); invSend(r.item, true); }
+    catch (x) { $('#inv-alert').innerHTML = `<div class="alert err">${esc(x.message)}</div>`; b.disabled = false; }
+  };
+  if (!$('#modal').open) $('#modal').showModal(); $('#i-prenom').focus();
+}
+function invSend(it, fresh) {
+  const txt = invText(it), url = invUrl(it), sub = 'Invitation au portail CGT Concentrix Compiègne';
+  const sms = `sms:${(it.tel || '').replace(/\s/g, '')}${isIOS() ? '&' : '?'}body=${encodeURIComponent(txt)}`;
+  const mail = `mailto:${encodeURIComponent(it.email || '').replace(/%40/g, '@')}?subject=${encodeURIComponent(sub)}&body=${encodeURIComponent(txt)}`;
+  const wa = `https://wa.me/${it.tel ? telIntl(it.tel) : ''}?text=${encodeURIComponent(txt)}`;
+  $('#modal-title').textContent = fresh ? '✅ Invitation prête' : '📨 Envoyer l’invitation';
+  $('#modal-body').innerHTML = `<div class="inv-send">
+    <p class="inv-who">Pour <strong>${esc([it.prenom, it.nom].filter(Boolean).join(' ') || 'la personne invitée')}</strong>${it.type === 'elu' ? ' · 🗳️ élu·e' : ''}</p>
+    <div class="inv-msg">${esc(txt)}</div>
+    <div class="inv-btns">
+      ${it.email ? `<a class="btn btn-red" href="${mail}" data-inv-via="email" data-id="${esc(it.id)}">📧 Envoyer par email</a>` : ''}
+      ${it.tel ? `<a class="btn btn-red" href="${sms}" data-inv-via="SMS" data-id="${esc(it.id)}">💬 Envoyer par SMS</a>` : ''}
+      <a class="btn btn-light" href="${wa}" target="_blank" rel="noopener" data-inv-via="WhatsApp" data-id="${esc(it.id)}">🟢 WhatsApp</a>
+      ${navigator.share ? `<button type="button" class="btn btn-light" data-inv-share data-id="${esc(it.id)}">📤 Partager…</button>` : ''}
+      <button type="button" class="btn btn-light" data-copy="${esc(url)}" data-inv-via="lien copié" data-id="${esc(it.id)}">${icon('copy')}Copier le lien</button>
+    </div>
+    <p class="note">L'email ou le SMS s'ouvre dans votre application, déjà rédigé : il ne reste qu'à appuyer sur Envoyer. Lien valable 30 jours, utilisable une seule fois.</p>
+    <button type="button" class="btn btn-light" data-invite-new style="width:100%;justify-content:center">➕ Inviter une autre personne</button></div>`;
+  $('#modal-form').onsubmit = e => { e.preventDefault(); $('#modal').close(); render(); };
+  if (!$('#modal').open) $('#modal').showModal();
+}
+document.addEventListener('click', async e => {
+  if (e.target.closest('[data-invite-new]')) { e.preventDefault(); invForm(); return; }
+  const s = e.target.closest('[data-invite-send]'); if (s) { const it = (window._inv || []).find(x => x.id === s.dataset.inviteSend); if (it) invSend(it); return; }
+  const d = e.target.closest('[data-invite-del]'); if (d) { if (!confirm('Annuler cette invitation ? Le lien ne fonctionnera plus.')) return; try { await Store.call('invite', { method: 'DELETE', query: '&id=' + encodeURIComponent(d.dataset.inviteDel) }); toast('Invitation annulée.'); render(); } catch (x) { toast(x.message); } return; }
+  const sh = e.target.closest('[data-inv-share]');
+  if (sh) { const it = (window._inv || []).find(x => x.id === sh.dataset.id); if (!it) return; try { await navigator.share({ title: 'Portail CGT Concentrix Compiègne', text: invText(it) }); Store.call('invite', { method: 'POST', query: '&id=' + it.id, body: { via: 'partage' } }).catch(() => {}); } catch {} return; }
+  const v = e.target.closest('[data-inv-via]'); if (v) Store.call('invite', { method: 'POST', query: '&id=' + encodeURIComponent(v.dataset.id), body: { via: v.dataset.invVia } }).catch(() => {});
+});
+document.addEventListener('close', e => { if (e.target.id === 'modal' && $('.inv-send')) render(); }, true);
 
 </script>
 </body>
