@@ -1122,6 +1122,11 @@ body:has(.bil-bar:not([hidden])) #app{padding-bottom:90px}
 @media (max-width:720px){.app-card{flex-direction:row;text-align:left;padding:12px;gap:12px;align-items:center}
   .app-qr{width:92px;height:92px}.app-actions{justify-content:flex-start;flex-direction:column;align-items:stretch}.app-actions .btn{width:100%;justify-content:center;padding:9px 10px}}
 .app-actions .btn-red{background:#fff;color:#E30613;box-shadow:none}
+/* Réseaux : deux par deux, le dernier centré */
+.follow-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;max-width:760px;margin:0 auto}
+.follow-grid>.social:last-child:nth-child(odd){grid-column:1 / -1;justify-self:center;width:calc(50% - 4px)}
+@media (max-width:620px){.follow-grid .social{padding:8px;gap:8px;font-size:12.5px}.follow-grid .s-ico{width:30px;height:30px}.follow-grid .s-ico svg{width:17px;height:17px}.follow-grid .social small{font-size:10.5px}}
+@media (max-width:620px){.follow-grid .social>span:last-child{overflow:visible;text-overflow:clip;overflow-wrap:anywhere;font-size:11.5px;line-height:1.3}.follow-grid .social small{font-size:11px;font-weight:800;color:var(--ink)}}
 
 </style>
 </head>
@@ -2605,7 +2610,7 @@ const SOCIAL = [
 ];
 const telHref = t => String(t || '').replace(/[^\d+]/g, '');
 function socialLinks(c) {
-  return SOCIAL.filter(([k]) => c[k]).map(([k, label, nice, url]) => {
+  return SOCIAL.filter(([k]) => c[k] && k !== 'threads').map(([k, label, nice, url]) => {
     const v = c[k]; const shown = nice && /^https?:/.test(v) ? nice : (/^https?:/.test(v) ? v.replace(/^https?:\/\/(www\.)?/, '') : '@' + v.replace(/^@/, ''));
     return `<a class="social s-${k}" href="${esc(safeUrl(url(v)) || '#')}" target="_blank" rel="noopener"><span class="s-ico">${icon(k)}</span><span><small>${label}</small>${esc(shown)}</span></a>`;
   }).join('');
