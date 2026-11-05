@@ -797,6 +797,10 @@ const A = {
     const q = String(req.query.q || '').trim().toLowerCase().slice(0, 50); const off = Math.min(Math.max(Number(req.query.offset) || 0, 0), 200);
     const ck = `cse:gif:${q || '_tendances'}:${off}`;
     const cached = await redis('GET', ck); if (cached) return { enabled: true, items: JSON.parse(cached) };
+    // 100 % gratuit : la clé GIPHY « beta » permet 100 appels par heure ; on s'arrête à 90 (compteur global) et 40 par personne
+    await rateLimit(req, 'gif', 40);
+    const hk = 'cse:giphy:' + new Date().toISOString().slice(0, 13); const nCalls = Number(await redis('INCR', hk)); if (nCalls === 1) await redis('EXPIRE', hk, 3700);
+    if (nCalls > 90) throw fail(429, 'Beaucoup de recherches de GIF en ce moment : réessayez dans quelques minutes, ou choisissez parmi les mots proposés.');
     const u = q ? `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(q)}&limit=24&offset=${off}&rating=pg-13&lang=fr`
       : `https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_KEY}&limit=24&offset=${off}&rating=pg-13`;
     const r = await fetch(u, { signal: AbortSignal.timeout(6000) });
@@ -805,7 +809,7 @@ const A = {
     const items = (j.data || []).map(g => { const im = g.images || {}; const full = im.downsized_medium || im.downsized || im.original || {}; const pv = im.fixed_width_downsampled || im.fixed_width || im.preview_gif || full;
       return { id: g.id, title: String(g.title || '').slice(0, 80), url: String(full.url || '').split('?')[0], preview: String(pv.url || '').split('?')[0], w: Number(pv.width) || 200, h: Number(pv.height) || 150 }; })
       .filter(x => GIPHY_RE.test(x.url) && GIPHY_RE.test(x.preview));
-    await redis('SET', ck, JSON.stringify(items), 'EX', 3600);
+    await redis('SET', ck, JSON.stringify(items), 'EX', q ? 86400 : 21600); // recherches gardées 24 h, tendances 6 h
     return { enabled: true, items };
   },
 
