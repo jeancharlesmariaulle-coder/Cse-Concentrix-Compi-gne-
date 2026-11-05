@@ -163,7 +163,7 @@ function body(req) { if (req.body && typeof req.body === 'object') return req.bo
 function send(res, status, obj) { res.status(status).setHeader('Cache-Control', 'no-store'); res.json(obj); }
 const fail = (status, msg) => Object.assign(new Error(msg), { status });
 const clip = (v, f) => String(v ?? '').trim().slice(0, LONG.includes(f) ? 8000 : 300);
-const publicUser = u => u && ({ id: u.id, email: u.email, prenom: u.prenom, nom: u.nom, service: u.service, role: u.role, status: u.status, created: u.created });
+const publicUser = u => u && ({ id: u.id, email: u.email, prenom: u.prenom, nom: u.nom, service: u.service, role: u.role, status: u.status, created: u.created, owner: !!u.owner });
 async function rateLimit(req, key, max) {
   const ip = String(req.headers['x-forwarded-for'] || 'x').split(',')[0].trim();
   const k = `cse:rl:${key}:${ip}`;
@@ -173,7 +173,7 @@ async function rateLimit(req, key, max) {
 async function getUser(id) { const v = await redis('HGET', 'cse:users', id); return v ? JSON.parse(v) : null; }
 async function allUsers() { const f = (await redis('HGETALL', 'cse:users')) || []; const o = []; for (let i = 1; i < f.length; i += 2) o.push(JSON.parse(f[i])); return o; }
 async function saveUser(u) { await redis('HSET', 'cse:users', u.id, JSON.stringify(u)); }
-const ADMIN_USER = { id: 'admin', email: ADMIN_EMAIL, prenom: 'Administrateur', nom: 'CGT', role: 'elu', status: 'active', created: '2026-01-01T00:00:00.000Z' };
+const ADMIN_USER = { id: 'admin', email: ADMIN_EMAIL, prenom: 'Administrateur', nom: 'CGT', role: 'elu', status: 'active', created: '2026-01-01T00:00:00.000Z', owner: true, principal: true };
 
 /* Session courante : vérifie le jeton ET que le compte est toujours actif */
 async function session(req) {
@@ -358,14 +358,21 @@ const A = {
   },
 
   async users(req) {
-    await need(req, 'elu');
+    const me = await need(req, 'elu');
     if (req.method === 'GET') return { items: (await allUsers()).map(publicUser).sort((a, b) => b.created.localeCompare(a.created)) };
     const b = body(req); const u = await getUser(String(b.id || ''));
     if (!u) throw fail(404, 'Compte introuvable.');
+    // Gestion des administrateurs : réservée au compte principal et aux comptes qui ont « la main »
+    const roleOps = ['elu', 'salarie', 'owner', 'unowner'];
+    if ((roleOps.includes(b.op) || (u.role === 'elu' && ['suspend', 'delete', 'reset'].includes(b.op))) && !me.owner)
+      throw fail(403, 'Seul le compte principal (ou une personne qui a la main) peut gérer les administrateurs.');
+    if (u.id === me.id && ['salarie', 'unowner', 'suspend', 'delete'].includes(b.op)) throw fail(400, 'Vous ne pouvez pas retirer vos propres droits.');
     if (b.op === 'approve') u.status = 'active';
+    else if (b.op === 'owner') { if (u.status !== 'active') throw fail(400, "Validez d'abord ce compte."); u.role = 'elu'; u.owner = true; }
+    else if (b.op === 'unowner') u.owner = false;
     else if (b.op === 'suspend') u.status = 'suspended';
-    else if (b.op === 'elu') u.role = 'elu';
-    else if (b.op === 'salarie') u.role = 'salarie';
+    else if (b.op === 'elu') { if (u.status !== 'active') throw fail(400, "Validez d'abord ce compte."); u.role = 'elu'; }
+    else if (b.op === 'salarie') { u.role = 'salarie'; u.owner = false; }
     else if (b.op === 'reset') {
       const temp = crypto.randomBytes(5).toString('base64url').replace(/[-_]/g, 'x') + '7';
       Object.assign(u, hashPw(temp)); await saveUser(u); return { ok: true, temp };

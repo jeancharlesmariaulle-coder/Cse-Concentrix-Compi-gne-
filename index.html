@@ -1127,6 +1127,35 @@ body:has(.bil-bar:not([hidden])) #app{padding-bottom:90px}
 .follow-grid>.social:last-child:nth-child(odd){grid-column:1 / -1;justify-self:center;width:calc(50% - 4px)}
 @media (max-width:620px){.follow-grid .social{padding:8px;gap:8px;font-size:12.5px}.follow-grid .s-ico{width:30px;height:30px}.follow-grid .s-ico svg{width:17px;height:17px}.follow-grid .social small{font-size:10.5px}}
 @media (max-width:620px){.follow-grid .social>span:last-child{overflow:visible;text-overflow:clip;overflow-wrap:anywhere;font-size:11.5px;line-height:1.3}.follow-grid .social small{font-size:11px;font-weight:800;color:var(--ink)}}
+/* Administrateurs */
+.adm-add{background:linear-gradient(120deg,#FCE4F0,#fff);border:2px solid #E6007E;border-radius:8px;padding:16px;margin-bottom:12px}
+.adm-add>label{display:block;margin-bottom:10px}
+.adm-add>label strong{display:block;font-size:15.5px}
+.adm-add>label small{color:var(--ink-2);font-size:13px}
+.adm-add-row{display:flex;gap:10px 14px;align-items:center;flex-wrap:wrap}
+.adm-add-row select{flex:1 1 260px;min-width:0;padding:11px 12px;border-radius:10px;border:1.5px solid var(--line);font:inherit;background:#fff}
+.adm-add-row .field-check{margin:0}
+.adm-row{display:flex;align-items:center;gap:12px;background:#fff;border-radius:8px;padding:12px 14px;box-shadow:var(--shadow);flex-wrap:wrap}
+.adm-row .u-info{flex:1;min-width:180px}
+.adm-row .u-info small{display:block;color:var(--muted);overflow-wrap:anywhere}
+.avatar.own{background:linear-gradient(135deg,#E30613,#E6007E);color:#fff}
+.pill.own{background:#FFF3C4;color:#7A5A00}
+.you{color:var(--muted);font-weight:600}
+@media (max-width:620px){.adm-add-row .btn{width:100%;justify-content:center}.adm-row .u-actions{width:100%}}
+.pill.adm{background:#FCE4F0;color:#B8050F}
+.role-btn{white-space:nowrap}
+.role-pick{flex-basis:100%;margin-top:10px;background:#FCE4F0;border-radius:10px;padding:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.role-pick[hidden]{display:none!important}
+.role-pick p{grid-column:1/-1;margin:0 0 2px;font-size:13.5px}
+.role-opt{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:#fff;border:2px solid transparent;border-radius:10px;padding:10px 12px;cursor:pointer;font:inherit;color:var(--ink)}
+.role-opt span{font-size:20px}
+.role-opt b{font-size:14px}
+.role-opt small{font-size:12px;color:var(--ink-2)}
+.role-opt:hover:not(:disabled){border-color:#E6007E}
+.role-opt.on{border-color:#E30613;cursor:default}
+.role-opt.on small{color:#E30613;font-weight:700}
+@media (max-width:720px){.role-pick{grid-template-columns:1fr}}
+.user-row{flex-wrap:wrap}
 
 </style>
 </head>
@@ -1412,7 +1441,7 @@ async function pdfCover(src) {
     return c.toDataURL('image/jpeg', .85);
   } catch (e) { console.warn('Aperçu PDF impossible', e); return null; }
 }
-const roleLabel = r => r === 'elu' ? 'Responsable CGT' : 'Salarié·e';
+const roleLabel = (r, owner) => r === 'elu' ? (owner ? 'Administrateur·rice avec la main' : 'Administrateur·rice') : 'Salarié·e';
 const fullName = u => u ? `${u.prenom || ''} ${u.nom || ''}`.trim() : '';
 const initials = u => ((u?.prenom || '?')[0] + (u?.nom || '')[0] || '').toUpperCase();
 
@@ -1596,7 +1625,7 @@ function accountCard() {
   const since = u.created ? new Date(u.created).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : '';
   return `<div class="who"><div class="avatar initials">${esc(initials(u))}</div><h3>Mon compte</h3></div>
     <p class="name">${esc(fullName(u))}</p><p class="meta">${esc(u.email)}</p>
-    <dl><dt>Rôle</dt><dd>${roleLabel(u.role)}</dd>${since ? `<dt>Membre depuis</dt><dd style="text-transform:capitalize">${since}</dd>` : ''}</dl>
+    <dl><dt>Rôle</dt><dd>${roleLabel(u.role, u.owner)}</dd>${since ? `<dt>Membre depuis</dt><dd style="text-transform:capitalize">${since}</dd>` : ''}</dl>
     <button class="btn btn-ghost" data-logout>Déconnexion${icon('logout')}</button>`;
 }
 
@@ -1923,8 +1952,12 @@ const Views = {
     const others = users.filter(u => u.status !== 'pending').sort((a, b) => (a.nom || '').localeCompare(b.nom || ''));
     const userRow = u => `<div class="user-row"><div class="avatar initials sm">${esc(initials(u))}</div><div class="u-info"><strong>${esc(fullName(u))}</strong><small>${esc(u.email)}${u.service ? ' · ' + esc(u.service) : ''} · inscrit·e le ${new Date(u.created).toLocaleDateString('fr-FR')}</small></div>
       <div class="u-actions">${u.status === 'pending' ? `<button class="btn btn-red btn-sm" data-uop="approve" data-uid="${u.id}">${icon('check')}Valider</button><button class="btn btn-light btn-sm" data-uop="delete" data-uid="${u.id}">Refuser</button>`
-      : `<span class="pill ${u.status === 'active' ? 'green' : 'yellow'}">${u.status === 'active' ? roleLabel(u.role) : 'Suspendu'}</span>
-         <select class="u-select" data-uid="${u.id}" aria-label="Actions pour ${esc(fullName(u))}"><option value="">Actions…</option>${u.status === 'active' ? '<option value="suspend">Suspendre l’accès</option>' : '<option value="approve">Réactiver</option>'}${u.role === 'elu' ? '<option value="salarie">Retirer le rôle élu·e</option>' : '<option value="elu">Donner le rôle élu·e</option>'}<option value="reset">Réinitialiser le mot de passe</option><option value="delete">Supprimer le compte</option></select>`}</div></div>`;
+      : `<span class="pill ${u.status !== 'active' ? 'yellow' : u.owner ? 'own' : u.role === 'elu' ? 'adm' : 'green'}">${u.status === 'active' ? (u.owner ? '👑 ' : '') + roleLabel(u.role, u.owner) : 'Suspendu'}</span>
+         ${iOwn && u.status === 'active' && u.id !== (Store.user || {}).id ? `<button type="button" class="btn btn-light btn-sm role-btn" data-role-btn="${u.id}" aria-expanded="false">👑 Rôle</button>` : ''}
+         ${u.role === 'elu' && !iOwn ? '' : `<select class="u-select" data-uid="${u.id}" aria-label="Actions pour ${esc(fullName(u))}"><option value="">Actions…</option>${u.status === 'active' ? '<option value="suspend">Suspendre l’accès</option>' : '<option value="approve">Réactiver</option>'}<option value="reset">Réinitialiser le mot de passe</option><option value="delete">Supprimer le compte</option></select>`}`}</div>
+      ${iOwn && u.status === 'active' && u.id !== (Store.user || {}).id ? `<div class="role-pick" id="rp-${u.id}" hidden><p>Choisir le rôle de <strong>${esc(fullName(u))}</strong> :</p>
+        ${[['salarie', '👤', 'Salarié·e', 'Accès normal au site'], ['elu', '🛠️', 'Administrateur·rice', 'Publie, lit les messages, gère adhésions, billetterie et comptes'], ['owner', '👑', 'Administrateur·rice avec la main', 'Peut en plus attribuer les rôles']].map(([r, e, l, d]) => { const cur = (u.owner ? 'owner' : u.role === 'elu' ? 'elu' : 'salarie') === r; return `<button type="button" class="role-opt ${cur ? 'on' : ''}" data-role-set="${r}" data-uid="${u.id}" data-cur="${u.owner ? 'owner' : u.role}" ${cur ? 'disabled' : ''}><span>${e}</span><b>${l}</b><small>${cur ? 'Rôle actuel' : d}</small></button>`; }).join('')}</div>` : ''}</div>`;
+    const iOwn = !!(Store.user && Store.user.owner);
     return `<div class="page">${pageHead('Tableau de bord responsable', 'Validez les inscriptions, lisez les messages, publiez et gérez les coordonnées du CSE.')}
       <div class="wrap page-body">
         ${Store.mode === 'demo' ? `<div class="alert warn"><strong>Mode démonstration</strong> : les données restent sur cet appareil tant que le stockage en ligne n'est pas branché sur Vercel.</div>` : ''}
@@ -1960,12 +1993,12 @@ const Views = {
 };
 
 async function userAction(id, op) {
-  const labels = { delete: 'Supprimer définitivement ce compte ?', suspend: 'Suspendre l’accès de ce compte ?', elu: 'Donner le rôle élu·e à ce compte ? Il pourra publier, voir les messages et gérer les comptes.' };
+  const labels = { delete: 'Supprimer définitivement ce compte ?', suspend: 'Suspendre l’accès de ce compte ?', elu: 'Nommer cette personne administrateur·rice ? Elle pourra publier, lire les messages, traiter adhésions et billetterie, et valider les comptes.', salarie: 'Retirer les droits d’administrateur de cette personne ?', owner: 'Donner la main sur les administrateurs à cette personne ? Elle pourra, comme vous, nommer et retirer des administrateurs.', unowner: 'Lui retirer la main sur les administrateurs ? Elle restera administrateur·rice.' };
   if (labels[op] && !confirm(labels[op])) return;
   try {
     const r = await Store.userOp(id, op);
     if (op === 'reset' && r && r.temp) alert(`Nouveau mot de passe provisoire : ${r.temp}\n\nCommuniquez-le à la personne : elle pourra le changer dans « Mon compte ».`);
-    toast({ approve: 'Compte validé.', delete: 'Compte supprimé.', suspend: 'Accès suspendu.', elu: 'Rôle élu·e attribué.', salarie: 'Rôle élu·e retiré.', reset: 'Mot de passe réinitialisé.' }[op] || 'OK');
+    toast({ approve: 'Compte validé.', delete: 'Compte supprimé.', suspend: 'Accès suspendu.', elu: 'Administrateur·rice nommé·e.', salarie: 'Droits d’administrateur retirés.', owner: 'Main donnée sur les administrateurs.', unowner: 'Main retirée.', reset: 'Mot de passe réinitialisé.' }[op] || 'OK');
     render();
   } catch (e) { toast(e.message); }
 }
@@ -3324,6 +3357,16 @@ async function billetsSection() {
     ${items.length ? `<div class="user-list bil-orders">${items.map(it => bilOrderRow(it, false)).join('')}</div>` : '<p class="note" style="margin-top:0">Aucune commande de billets pour le moment.</p>'}
     <p class="note">Changez le statut au fil de l'eau : « Prête à retirer » quand les billets sont prêts, « Retirée » une fois réglée et remise. Le salarié voit le statut dans son onglet Avantages.</p>`;
 }
+
+/* Bouton « Rôle » à côté de chaque compte (réservé au compte principal et à qui a la main) */
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-role-btn]');
+  if (b) { const p = $('#rp-' + b.dataset.roleBtn); $$('.role-pick').forEach(x => { if (x !== p) x.hidden = true; }); p.hidden = !p.hidden; b.setAttribute('aria-expanded', String(!p.hidden)); return; }
+  const o = e.target.closest('[data-role-set]'); if (!o) return;
+  const to = o.dataset.roleSet, cur = o.dataset.cur;
+  const op = to === 'owner' ? 'owner' : to === 'salarie' ? 'salarie' : cur === 'owner' ? 'unowner' : 'elu';
+  userAction(o.dataset.uid, op);
+});
 
 </script>
 </body>
