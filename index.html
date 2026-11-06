@@ -3104,12 +3104,13 @@ function followBlock(c) {
     </div>
   </section>`;
 }
+const BUREAUX = '98 impasse Terres Auprès des Iles\nZAC du Parc Tertiaire\n60610 Lacroix-Saint-Ouen';
 function contactCards(c) {
   return `
     ${c.email ? `<div class="info-card navy"><h3 style="color:#fff">${icon('mail')}Email de la section</h3><p><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></p></div>` : ''}
     ${c.telephone ? `<div class="info-card navy"><h3 style="color:#fff">${icon('phone')}Téléphone</h3><p><a href="tel:${esc(telHref(c.telephone))}">${esc(c.telephone)}</a>${c.tel_note ? `<br><span class="tel-note">${esc(c.tel_note)}</span>` : ''}</p></div>` : ''}
     ${c.responsable ? `<div class="info-card"><h3>${icon('user')}Votre responsable</h3><p>${esc(c.responsable)}${c.responsable_tel ? `<br><a href="tel:${esc(telHref(c.responsable_tel))}"><strong>${esc(c.responsable_tel)}</strong></a>` : ''}</p></div>` : ''}
-    ${c.adresse ? `<div class="info-card"><h3>${icon('pin')}Adresse</h3><p style="white-space:pre-wrap">${esc(c.adresse)}</p></div>` : ''}
+    ${(() => { const adr = c.adresse || BUREAUX; return `<div class="info-card"><h3>${icon('pin')}Nos bureaux</h3><p style="white-space:pre-wrap">${esc(adr)}</p><p style="margin-top:10px"><a class="btn btn-red btn-sm" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(adr.replace(/\n/g, ', '))}" target="_blank" rel="noopener">${icon('pin')}Itinéraire</a></p></div>`; })()}
     ${c.permanences ? `<div class="info-card"><h3>${icon('clock')}Permanences</h3><p style="white-space:pre-wrap">${esc(c.permanences)}</p></div>` : ''}`;
 }
 function contactForm(s) {
