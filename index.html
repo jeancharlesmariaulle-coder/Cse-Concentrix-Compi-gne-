@@ -1540,6 +1540,21 @@ body.wizzing,#chat-panel.wizzing{animation:wizzBig .95s cubic-bezier(.36,.07,.19
 .avatar.is-on{position:relative;overflow:visible}
 #chat-sub.on-now::after{content:' · ' attr(data-on);color:#B8F5CF;font-weight:700}
 .online-p .avatar{overflow:visible}
+/* « À la une » plus compact */
+.une-panel{padding:16px 18px!important}
+.une-panel .panel-title{font-size:20px;margin-bottom:4px}
+.une{gap:16px}
+.une-img{aspect-ratio:1.9}
+.une h3{font-size:17px;margin:0 0 6px}
+.une p{font-size:13px;margin:0 0 8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.une .eyebrow{margin-bottom:4px}
+@media (max-width:720px){
+  .une{grid-template-columns:38% 1fr;gap:12px;align-items:start}
+  .une-img{aspect-ratio:1;border-radius:10px}
+  .une h3{font-size:15px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .une p{font-size:12.5px}
+  .une .text-link{font-size:13px}
+}
 
 </style>
 </head>
