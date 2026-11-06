@@ -3094,12 +3094,10 @@ function socialLinks(c) {
   }).join('');
 }
 function followBlock(c) {
-  const site = location.origin.replace(/^https?:\/\//, '');
   return `<section class="home-follow" aria-label="Communication et réseaux">
     <div class="follow-card">
-      <div class="follow-head"><span class="grp-ico">${icon('users')}</span><div><h3>Suivez nos actions et l'actu</h3><p>Retrouvez la CGT Concentrix Compiègne sur les réseaux et sur le site.</p></div></div>
+      <div class="follow-head"><span class="grp-ico">${icon('users')}</span><div><h3>Suivez nos actions et l'actu</h3><p>Retrouvez la CGT Concentrix Compiègne sur les réseaux sociaux.</p></div></div>
       <div class="socials follow-grid">${socialLinks(c)}
-        <a class="social s-site" href="${esc(location.origin + '/')}"><span class="s-ico">${icon('arrow')}</span><span><small>Site & application</small>${esc(site)}</span></a>
       </div>
     </div>
   </section>`;
